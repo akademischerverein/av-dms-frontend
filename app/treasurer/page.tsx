@@ -39,6 +39,7 @@ import { de } from "date-fns/locale"
 import Image from "next/image"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { RequestInfo, SendRequest, Document } from "@/lib/backend"
 
 interface Receipt {
   id: number
@@ -61,79 +62,13 @@ interface Receipt {
   base64?: string
 }
 
-const mockReceipts: Receipt[] = [
-  {
-    id: 1,
-    uploaderName: "Max Mustermann",
-    uploaderEmail: "max@example.com",
-    receiptDate: "2024-01-15",
-    amount: 45.5,
-    purpose: "Tankstelle Shell - Fahrt zur Veranstaltung",
-    accountType: "fahrtkosten",
-    debitCredit: "debit",
-    comment: "Fahrt zum Vereinsausflug",
-    status: "uploaded",
-    uploadedAt: "2024-01-16T10:30:00Z",
-    filename: "tankbeleg_shell.pdf",
-    markings: [],
-  },
-  {
-    id: 2,
-    uploaderName: "Anna Schmidt",
-    uploaderEmail: "anna@example.com",
-    receiptDate: "2024-01-14",
-    amount: 23.8,
-    purpose: "REWE Supermarkt - Verpflegung",
-    accountType: "verpflegung",
-    debitCredit: "debit",
-    comment: "Getränke für Vereinsfeier",
-    status: "approved",
-    uploadedAt: "2024-01-15T14:20:00Z",
-    filename: "rewe_beleg.pdf",
-    treasurerComment: "Alles korrekt",
-    receiptGroup: "24W-VER-",
-    markings: ["green"],
-  },
-  {
-    id: 3,
-    uploaderName: "Peter Weber",
-    uploaderEmail: "peter@example.com",
-    receiptDate: "2024-01-13",
-    amount: 156.0,
-    purpose: "Baumarkt - Material für Vereinsheim",
-    accountType: "material",
-    debitCredit: "debit",
-    comment: "Reparatur der Eingangstür",
-    status: "rejected",
-    uploadedAt: "2024-01-14T09:15:00Z",
-    filename: "baumarkt_rechnung.pdf",
-    treasurerComment: "Beleg unleserlich, bitte neu einreichen",
-    markings: ["red"],
-  },
-]
-
-const receiptGroups = [
-  { value: "24W-VER-", label: "24W-VER- (Veranstaltungen)", lastUsed: 15 },
-  { value: "24W-MAT-", label: "24W-MAT- (Material)", lastUsed: 8 },
-  { value: "24W-FAH-", label: "24W-FAH- (Fahrtkosten)", lastUsed: 23 },
-]
-
-const accountTypes = [
-  { value: "fahrtkosten", label: "Fahrtkosten", account: "4510" },
-  { value: "verpflegung", label: "Verpflegung", account: "4520" },
-  { value: "material", label: "Material & Ausrüstung", account: "4530" },
-  { value: "veranstaltung", label: "Veranstaltungskosten", account: "4540" },
-  { value: "verwaltung", label: "Verwaltung", account: "4550" },
-  { value: "sonstiges", label: "Sonstiges", account: "4560" },
-]
-
 export default function TreasurerPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking, true = authenticated, false = not authenticated
-  const [receipts, setReceipts] = useState<Receipt[]>(mockReceipts)
-  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null)
-  const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null)
+  const [documents, setDocuments] = useState<Record<number, Document>>(new Map())
+  const [selectedReceipt, setSelectedReceipt] = useState<Document | null>(null)
+  const [editingReceipt, setEditingReceipt] = useState<Document | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -141,61 +76,34 @@ export default function TreasurerPage() {
 
   // Check authentication on mount
   useEffect(() => {
-    if (typeof window === "undefined") {
-      setIsAuthenticated(false)
-      return
-    }
-
-    const checkAuth = () => {
-      const authStatus = localStorage.getItem("treasurerAuthenticated")
-      const authTime = localStorage.getItem("treasurerAuthTime")
-
-      // Check if authenticated and session is valid (24 hours)
-      if (authStatus === "true" && authTime) {
-        const timeDiff = Date.now() - parseInt(authTime)
-        const hours24 = 24 * 60 * 60 * 1000
-
-        if (timeDiff < hours24) {
-          setIsAuthenticated(true)
-          return
-        } else {
-          // Session expired
-          localStorage.removeItem("treasurerAuthenticated")
-          localStorage.removeItem("treasurerAuthTime")
-        }
-      }
-
-      // Not authenticated or session expired
-      setIsAuthenticated(false)
-      router.replace("/treasurer/login")
-    }
-
-    checkAuth()
+	RequestInfo("auth/whoami").then((res) => res.json()).then((data) => {
+		setIsAuthenticated(data.isAuthenticated)
+		
+		if (!data.isAuthenticated) {
+			// Not authenticated or session expired
+			setIsAuthenticated(false)
+			router.replace("/treasurer/login")
+		}
+	})
   }, [router])
 
-  // Load persisted receipts from localStorage (uploads)
+  // Load receipts
   useEffect(() => {
-    try {
-      const storedRaw = typeof window !== "undefined" ? localStorage.getItem("uploadedReceipts") : null
-      if (storedRaw) {
-        const stored: Receipt[] = JSON.parse(storedRaw)
-        const byId = new Map<number, Receipt>()
-        ;[...stored, ...mockReceipts].forEach((r) => {
-          byId.set(r.id, r)
-        })
-        setReceipts(Array.from(byId.values()))
-      }
-    } catch (err) {
-      console.error("Failed to load stored receipts", err)
-    }
+	SendRequest("documents/search", {"versionType": "CURRENT"})
+		.then((res) => res.json()).then((data) => {
+			const docs: Document[] = data
+			setDocuments(new Map(docs.documents.map((v) : [number, Document] => [v.documentId, v])))
+		})
   }, [])
 
-  const filteredReceipts = receipts.filter((receipt) => {
-    const matchesStatus = filterStatus === "all" || receipt.status === filterStatus
+  const onlyDocumentsValues = [...documents.values()]
+  
+  const filteredReceipts = onlyDocumentsValues.filter((receipt) => {
+    const matchesStatus = filterStatus === "all" || receipt.version.state === filterStatus
     const matchesSearch =
       searchTerm === "" ||
       receipt.uploaderName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      receipt.purpose.toLowerCase().includes(searchTerm.toLowerCase())
+      receipt.version.receipts[0].booking[0].toLowerCase().includes(searchTerm.toLowerCase())
     return matchesStatus && matchesSearch
   })
 
@@ -204,12 +112,12 @@ export default function TreasurerPage() {
     return sortOrder === "newest" ? -diff : diff
   })
 
-  const getStatusBadge = (status: Receipt["status"]) => {
+  const getStatusBadge = (status: DocumentVersion["state"]) => {
     const variants = {
-      uploaded: { variant: "secondary" as const, label: "Eingereicht", icon: Clock },
-      approved: { variant: "default" as const, label: "Genehmigt", icon: CheckCircle },
-      rejected: { variant: "destructive" as const, label: "Abgelehnt", icon: XCircle },
-      finalized: { variant: "outline" as const, label: "Finalisiert", icon: FileText },
+      UPLOADED: { variant: "secondary" as const, label: "Eingereicht", icon: Clock },
+      APPROVED: { variant: "default" as const, label: "Genehmigt", icon: CheckCircle },
+      REJECTED: { variant: "destructive" as const, label: "Abgelehnt", icon: XCircle },
+      FINALIZED: { variant: "outline" as const, label: "Finalisiert", icon: FileText },
     }
     const config = variants[status]
     const Icon = config.icon
@@ -232,10 +140,7 @@ export default function TreasurerPage() {
   }
 
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("treasurerAuthenticated")
-      localStorage.removeItem("treasurerAuthTime")
-    }
+	fetch("https://localhost:7215/auth/logout", {"method": "POST", "credentials": "include"})
     toast({
       title: "Abgemeldet",
       description: "Sie wurden erfolgreich abgemeldet.",
@@ -243,13 +148,12 @@ export default function TreasurerPage() {
     router.replace("/treasurer/login")
   }
 
-  const handleStatusChange = (receiptId: number, newStatus: Receipt["status"], comment?: string) => {
-    setReceipts((prev) => {
+  const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"], comment?: string) => {
+    setDocuments((prev) => {
       const updated = prev.map((r) =>
         r.id === receiptId ? { ...r, status: newStatus, treasurerComment: comment || r.treasurerComment } : r,
       )
 
-      // Persist only uploaded receipts (i.e., those from localStorage)
       try {
         const raw = localStorage.getItem("uploadedReceipts")
         if (raw) {
@@ -267,7 +171,7 @@ export default function TreasurerPage() {
     // Auto-advance to next receipt awaiting review
     setTimeout(() => {
       setReceipts((current) => {
-        const pending = current.filter((r) => r.status === "uploaded")
+        const pending = current.filter((r) => r.status === "UPLOADED")
         if (pending.length === 0) {
           setIsDialogOpen(false)
           setSelectedReceipt(null)
@@ -281,7 +185,7 @@ export default function TreasurerPage() {
     }, 0)
   }
 
-  const handleMarkingToggle = (receiptId: number, marking: "green" | "yellow" | "red") => {
+  const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red") => {
     setReceipts((prev) =>
       prev.map((receipt) => {
         if (receipt.id === receiptId) {
@@ -296,11 +200,11 @@ export default function TreasurerPage() {
   }
 
   const stats = {
-    total: receipts.length,
-    uploaded: receipts.filter((r) => r.status === "uploaded").length,
-    approved: receipts.filter((r) => r.status === "approved").length,
-    rejected: receipts.filter((r) => r.status === "rejected").length,
-    totalAmount: receipts.filter((r) => r.status === "approved").reduce((sum, r) => sum + r.amount, 0),
+    total: documents.size,
+    uploaded: onlyDocumentsValues.filter((r) => r.version.state === "UPLOADED").length,
+    approved: onlyDocumentsValues.filter((r) => r.version.state === "APPROVED").length,
+    rejected: onlyDocumentsValues.filter((r) => r.version.state === "REJECTED").length,
+    totalAmount: onlyDocumentsValues.filter((r) => r.version.state === "APPROVED").reduce((sum, r) => sum + r.version.receipts[0].bookings[0].amount, 0),
   }
 
   // Show loading state while checking authentication or redirecting
@@ -419,10 +323,10 @@ export default function TreasurerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Alle Status</SelectItem>
-                  <SelectItem value="uploaded">Eingereicht</SelectItem>
-                  <SelectItem value="approved">Genehmigt</SelectItem>
-                  <SelectItem value="rejected">Abgelehnt</SelectItem>
-                  <SelectItem value="finalized">Finalisiert</SelectItem>
+                  <SelectItem value="UPLOADED">Eingereicht</SelectItem>
+                  <SelectItem value="APPROVED">Genehmigt</SelectItem>
+                  <SelectItem value="REJECTED">Abgelehnt</SelectItem>
+                  <SelectItem value="FINALIZED">Finalisiert</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={sortOrder} onValueChange={(v: any)=>setSortOrder(v)}>
@@ -434,10 +338,6 @@ export default function TreasurerPage() {
                   <SelectItem value="oldest">Älteste zuerst</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={()=>{
-                    localStorage.removeItem("uploadedReceipts");
-                    location.reload();
-               }}>Reset Demo</Button>
               <Button variant="outline" size="sm">
                 <Download className="h-4 w-4 mr-2" />
                 Export
@@ -460,27 +360,24 @@ export default function TreasurerPage() {
                 </TableHeader>
                 <TableBody>
                   {sortedReceipts.map((receipt) => (
-                    <TableRow key={receipt.id}>
-                      <TableCell>{getStatusBadge(receipt.status)}</TableCell>
+                    <TableRow key={receipt.documentId}>
+                      <TableCell>{getStatusBadge(receipt.version.state)}</TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">{receipt.uploaderName}</p>
                           <p className="text-sm text-gray-500">{receipt.uploaderEmail}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{format(new Date(receipt.receiptDate), "dd.MM.yyyy", { locale: de })}</TableCell>
-                      <TableCell className="font-medium">€{receipt.amount.toFixed(2)}</TableCell>
+                      <TableCell>{format(new Date(receipt.version.receipts[0].date), "dd.MM.yyyy", { locale: de })}</TableCell>
+                      <TableCell className="font-medium">€{receipt.version.receipts[0].bookings[0].amount.toFixed(2)}</TableCell>
                       <TableCell>
                         <div className="max-w-xs">
-                          <p className="truncate">{receipt.purpose}</p>
-                          <Badge variant="outline" className="text-xs mt-1">
-                            {accountTypes.find((t) => t.value === receipt.accountType)?.label}
-                          </Badge>
+                          <p className="truncate">{receipt.version.receipts[0].bookings[0].text}</p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {receipt.markings.map((marking, index) => (
+                          {[].map((marking, index) => (
                             <div key={index}>{getMarkingBadge(marking)}</div>
                           ))}
                         </div>
@@ -497,12 +394,12 @@ export default function TreasurerPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {receipt.status === "uploaded" && (
+                          {receipt.version.state === "UPLOADED" && (
                             <>
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleStatusChange(receipt.id, "approved")}
+                                onClick={() => handleStatusChange(receipt.documentId, "APPROVED")}
                                 className="text-green-600 hover:text-green-700"
                               >
                                 <CheckCircle className="h-4 w-4" />
@@ -510,7 +407,7 @@ export default function TreasurerPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleStatusChange(receipt.id, "rejected", "Bitte überprüfen")}
+                                onClick={() => handleStatusChange(receipt.documentId, "REJECTED", "Bitte überprüfen")}
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <XCircle className="h-4 w-4" />
@@ -533,35 +430,14 @@ export default function TreasurerPage() {
             <div className="flex flex-col md:flex-row h-full w-full">
               {selectedReceipt && (
                 <>
-                  {selectedReceipt.base64 || selectedReceipt.previewUrl || selectedReceipt.filename ? (
-                    <div className="md:w-7/12 w-full h-full flex justify-center items-start bg-gray-100">
-                      {(() => {
-                        const src = selectedReceipt.previewUrl || selectedReceipt.base64;
-                        if (!src) {
-                          return <p className="text-sm text-gray-500 m-auto">Keine Vorschau verfügbar</p>;
-                        }
-                        
-                        const mimeType = selectedReceipt.mimeType;
-                        const filename = selectedReceipt.filename?.toLowerCase() || '';
-
-                        if (mimeType?.startsWith("image/") || filename.match(/\.(jpg|jpeg|png|gif)$/)) {
-                          return <img src={src} alt="Beleg Vorschau" className="max-h-full max-w-full object-contain" />;
-                        }
-                        if (mimeType === "application/pdf" || filename.endsWith('.pdf')) {
-                          return <embed src={src} type="application/pdf" className="w-full h-full" />;
-                        }
-                        
-                        return <p className="text-sm text-gray-500 m-auto">Vorschau für diesen Dateityp nicht unterstützt.</p>;
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="md:w-7/12 w-full flex items-center justify-center text-sm text-gray-400 bg-gray-100">Keine Vorschau verfügbar</div>
-                  )}
+                  <div className="md:w-7/12 w-full h-full flex justify-center items-start bg-gray-100">
+                    <embed src={"https://localhost:7215/documents/file/"+selectedReceipt.documentId} type="application/pdf" className="w-full h-full" />
+                  </div>
 
                   <div className="md:w-5/12 w-full h-full flex flex-col bg-white shadow-inner">
                     {/* Header info */}
                     <div className="px-6 pt-6 pb-4 border-b">
-                      <h2 className="font-semibold text-lg mb-1">Beleg ID {selectedReceipt.id}</h2>
+                      <h2 className="font-semibold text-lg mb-1">Beleg ID {selectedReceipt.documentId}</h2>
                       <p className="text-xs text-gray-500">
                         {format(new Date(selectedReceipt.uploadedAt), "dd.MM.yyyy HH:mm", { locale: de })} · {selectedReceipt.uploaderName}
                       </p>
@@ -572,8 +448,8 @@ export default function TreasurerPage() {
                       {/* Einreicher */}
                       <div className="space-y-1">
                         <p><span className="font-medium">E-Mail:</span> {selectedReceipt.uploaderEmail}</p>
-                        <p><span className="font-medium">Datei:</span> {selectedReceipt.filename}</p>
-                        {selectedReceipt.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedReceipt.comment}</p>}
+                        <p><span className="font-medium">Datei:</span> {selectedReceipt.file.filename}</p>
+                        {selectedReceipt.version.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedReceipt.version.comment}</p>}
                       </div>
 
                       {/* Details */}
@@ -581,22 +457,22 @@ export default function TreasurerPage() {
                         <Label className="block">Datum</Label>
                         <Input
                           type="date"
-                          defaultValue={format(new Date(selectedReceipt.receiptDate), "yyyy-MM-dd")}
-                          onChange={(e)=> setSelectedReceipt(r=>r?{...r, receiptDate:e.target.value}:r)}
+                          defaultValue={format(new Date(selectedReceipt.version.receipts[0].date), "yyyy-MM-dd")}
+                          onChange={(e)=> setSelectedReceipt(r=>{r.version.receipts[0].date = e.target.value; return r})}
                         />
                         <Label className="block mt-3">Betrag €</Label>
-                        <Input type="number" step="0.01" defaultValue={selectedReceipt.amount} />
+                        <Input type="number" step="0.01" defaultValue={selectedReceipt.version.receipts[0].bookings[0].amount.toFixed(2)} />
                         <Label className="block mt-3">Verwendungszweck</Label>
-                        <Input defaultValue={selectedReceipt.purpose} />
+                        <Input defaultValue={selectedReceipt.version.receipts[0].bookings[0].text} />
                       </div>
 
                       {/* Markierungen */}
                       <div className="space-y-2">
                         <p className="font-medium">Markierungen</p>
                         <div className="flex gap-2 flex-wrap">
-                          <Button size="sm" className={selectedReceipt.markings.includes("green")?"bg-green-600 text-white":"bg-transparent border border-green-600 text-green-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"green")}>Korrekt</Button>
-                          <Button size="sm" className={selectedReceipt.markings.includes("yellow")?"bg-yellow-500 text-white":"bg-transparent border border-yellow-500 text-yellow-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"yellow")}>Unklar</Button>
-                          <Button size="sm" className={selectedReceipt.markings.includes("red")?"bg-red-600 text-white":"bg-transparent border border-red-600 text-red-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"red")}>Fehler</Button>
+                          <Button size="sm" className={[].includes("green")?"bg-green-600 text-white":"bg-transparent border border-green-600 text-green-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"green")}>Korrekt</Button>
+                          <Button size="sm" className={[].includes("yellow")?"bg-yellow-500 text-white":"bg-transparent border border-yellow-500 text-yellow-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"yellow")}>Unklar</Button>
+                          <Button size="sm" className={[].includes("red")?"bg-red-600 text-white":"bg-transparent border border-red-600 text-red-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"red")}>Fehler</Button>
                         </div>
                       </div>
 
@@ -606,10 +482,10 @@ export default function TreasurerPage() {
                     {/* Buttons */}
                     <div className="border-t px-6 py-4 flex justify-end gap-3">
                       <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)}>Schließen</Button>
-                      {selectedReceipt.status === "uploaded" && (
+                      {selectedReceipt.version.state === "UPLOADED" && (
                         <>
-                          <Button size="sm" className="bg-red-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.id,"rejected","Beleg abgelehnt")}>Ablehnen</Button>
-                          <Button size="sm" className="bg-green-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.id,"approved","Beleg genehmigt")}>Genehmigen</Button>
+                          <Button size="sm" className="bg-red-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"REJECTED","Beleg abgelehnt")}>Ablehnen</Button>
+                          <Button size="sm" className="bg-green-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"APPROVED","Beleg genehmigt")}>Genehmigen</Button>
                         </>
                       )}
                     </div>

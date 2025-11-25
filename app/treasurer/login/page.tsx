@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,14 +12,26 @@ import { useToast } from "@/hooks/use-toast"
 import { Lock, AlertTriangle, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
-const TREASURER_PASSWORD = "kassenwart2024"
-
 export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  
+  useEffect(() => {
+	fetch("https://localhost:7215/auth/whoami", {"credentials": "include"}).then((res) => res.json()).then((data) => {
+		if (data.isAuthenticated) {
+			toast({
+				title: "Bereits angemeldet",
+				description: "Sie werden zum Dashboard weitergeleitet.",
+			})
+			// already authenticated
+			router.replace("/treasurer")
+		}
+	})
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,25 +40,44 @@ export default function LoginPage() {
 
     // Simulate a small delay for better UX
     await new Promise((resolve) => setTimeout(resolve, 300))
-
-    if (password === TREASURER_PASSWORD) {
-      // Store authentication in localStorage
-      if (typeof window !== "undefined") {
-        localStorage.setItem("treasurerAuthenticated", "true")
-        localStorage.setItem("treasurerAuthTime", Date.now().toString())
-      }
-
-      toast({
-        title: "Erfolgreich angemeldet",
-        description: "Sie werden zum Dashboard weitergeleitet.",
-      })
-
-      // Redirect to treasurer dashboard
-      router.replace("/treasurer")
-    } else {
-      setError("Falsches Passwort. Bitte versuchen Sie es erneut.")
-      setIsLoading(false)
-    }
+	let resp = await fetch("https://localhost:7215/auth/login", {"method": "POST", "body": JSON.stringify({"username": username, "password": password}), "headers": {"Content-Type": "application/json"}, "credentials": "include"})
+	
+	if (resp.status >= 500) {
+		setError("Server-Fehler. Bitte versuchen Sie es später erneut.")
+		setIsLoading(false)
+	}
+	let data = await resp.json()
+	
+	if (resp.status >= 400) {
+		if (data.code === "RATE_LIMITED") {
+			setError("Zu viele Loginversuche. Bitte versuchen Sie es später erneut.")
+			setPassword("")
+			setIsLoading(false)
+			return
+		} else if (data.code === "INVALID_LOGIN") {
+			setError("Die Logindaten sind falsch. Bitte versuchen Sie es erneut.")
+			setPassword("")
+			setIsLoading(false)
+			return
+		} else if (data.code === "ALREADY_AUTHENTICATED") {
+			toast({
+				title: "Bereits angemeldet",
+				description: "Sie werden zum Dashboard weitergeleitet.",
+			})
+			router.replace("/treasurer")
+		}
+	} else if (resp.status === 200) {
+		toast({
+			title: "Erfolgreich",
+			description: "Hallo " + data.displayName + "! Sie werden zum Dashboard weitergeleitet.",
+		})
+		router.replace("/treasurer")
+		return
+	}
+	
+	setError("Unbekannter Fehler. Bitte versuchen Sie es erneut.")
+	setPassword("")
+	setIsLoading(false)
   }
 
   return (
@@ -66,6 +97,19 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+			  <div className="space-y-2">
+                <Label htmlFor="username">Benutzername</Label>
+                <Input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Benutzername eingeben"
+                  required
+                  disabled={isLoading}
+                  className="w-full"
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Passwort</Label>
                 <Input

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -31,6 +31,7 @@ import {
 import { format, parse } from "date-fns"
 import { de } from "date-fns/locale"
 import { cn } from "@/lib/utils"
+import { RequestInfo, SendRequest } from "@/lib/backend"
 
 interface UploadData {
   receiptDate: Date | undefined
@@ -40,18 +41,10 @@ interface UploadData {
   uploaderEmail: string
   file: File | null
   comment: string
-  accountType: string
+  account: Number | null
+  person: Number | null
   debitCredit: "debit" | "credit"
 }
-
-const accountTypes = [
-  { value: "fahrtkosten", label: "Fahrtkosten" },
-  { value: "verpflegung", label: "Verpflegung" },
-  { value: "material", label: "Material & Ausrüstung" },
-  { value: "veranstaltung", label: "Veranstaltungskosten" },
-  { value: "verwaltung", label: "Verwaltung" },
-  { value: "sonstiges", label: "Sonstiges" },
-]
 
 // OCR helper types
 type OcrFields = { amount?: string; date?: Date; receiptNumber?: string }
@@ -66,8 +59,24 @@ export default function HomePage() {
     uploaderEmail: typeof window !== "undefined" ? localStorage.getItem("uploaderEmail") || "" : "",
     file: null,
     comment: "",
-    accountType: "",
     debitCredit: "debit",
+  })
+ 
+  const [accounts, setAccounts] = useState([]);
+  const [isAccountsLoading, setAccountsLoading] = useState(true);
+  
+  useEffect(() => {
+	  if (accounts.length > 0) return
+	  
+	  RequestInfo("proxy/accounts/all")
+	  .then((res) => res.json()).then((data) => {
+		  data.forEach((ele) => {
+			ele.label = ele.name
+			ele.value = ele.number
+		  })
+		  setAccounts(data)
+		  setAccountsLoading(false)
+	  })
   })
 
   const [isUploading, setIsUploading] = useState(false)
@@ -141,51 +150,34 @@ export default function HomePage() {
       // Save to localStorage
       localStorage.setItem("uploaderName", formData.uploaderName)
       localStorage.setItem("uploaderEmail", formData.uploaderEmail)
+	  const base64 = await fileToBase64(formData.file!)
+	  const fileBuffer = await formData.file!.arrayBuffer()
+	  const digest = await crypto.subtle.digest("SHA-256", fileBuffer)
+	  const hexdigest = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
+	  
+	  const receipt = {
+		  file: {
+			  filename: formData.file!.name,
+			  hash: hexdigest,
+			  hashAlgorithm: "SHA256",
+			  data: base64
+		  },
+		  uploaderName: formData.uploaderName,
+		  uploaderEmail: formData.uploaderEmail,
+		  metadata: {
+			  receiptDate: formData.receiptDate.toISOString().split("T")[0],
+			  amount: parseFloat(formData.amount),
+			  text: formData.purpose,
+			  comment: formData.comment,
+			  debit: formData.debitCredit == "debit" ? formData.account : formData.person,
+			  credit: formData.debitCredit == "credit" ? formData.account : formData.person
+		  }
+	  }
 
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return prev
-          }
-          return prev + 10
-        })
-      }, 200)
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      // Persist to localStorage so Treasurer page can see it
-      const base64 = await fileToBase64(formData.file!)
-
-      const newReceipt = {
-        id: Date.now(),
-        uploaderName: formData.uploaderName,
-        uploaderEmail: formData.uploaderEmail,
-        receiptDate: formData.receiptDate ? formData.receiptDate.toISOString().split("T")[0] : "",
-        amount: parseFloat(formData.amount),
-        purpose: formData.purpose,
-        accountType: formData.accountType,
-        debitCredit: formData.debitCredit,
-        comment: formData.comment,
-        status: "uploaded",
-        uploadedAt: new Date().toISOString(),
-        filename: formData.file!.name,
-        base64,
-        mimeType: formData.file!.type,
-        markings: [],
-      }
-
-      try {
-        const storedRaw = localStorage.getItem("uploadedReceipts")
-        const stored = storedRaw ? JSON.parse(storedRaw) : []
-        stored.push(newReceipt)
-        localStorage.setItem("uploadedReceipts", JSON.stringify(stored))
-      } catch (err) {
-        console.error("Failed to persist receipt", err)
-      }
-
+      const upload = await SendRequest("documents/upload", receipt)
+	  if (upload.status > 299) {
+		  throw new Exception()
+	  }
       setUploadProgress(100)
 
       toast({
@@ -201,10 +193,11 @@ export default function HomePage() {
         purpose: "",
         file: null,
         comment: "",
-        accountType: "",
+        account: null,
         debitCredit: "debit",
       }))
     } catch (error) {
+		console.log(error)
       toast({
         title: "Fehler beim Upload",
         description: "Bitte versuchen Sie es erneut.",
@@ -385,11 +378,25 @@ export default function HomePage() {
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
+      reader.onload = () => {
+		  const base64DataUrl = reader.result as string
+		  resolve(base64DataUrl.split(",")[1])
+	  }
       reader.onerror = reject
       reader.readAsDataURL(file)
     })
   }
+  
+  const personAccounts = accounts.filter((acc) => {
+	  return acc.type == "DEBTORS" || acc.type == "CREDITORS"
+  })
+  
+  const viewableAccounts = accounts.filter((acc) => {
+	  const disallowedTypes = [
+		"DEBTORS", "CREDITORS", "TRANSIT", "DEPRICATION_EXPENSES", "EQUITIES", "FINANCIAL", "CONNECTED_ENTITIES", "OPENING_BALANCES"
+	  ]
+	  return !disallowedTypes.includes(acc.type)
+  }).sort((a, b) => b.number - a.number)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-[#e53b3e]/40 p-4">
@@ -536,28 +543,7 @@ export default function HomePage() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4" />
-                    Kontotyp
-                  </Label>
-                  <Select
-                    value={formData.accountType}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, accountType: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Kategorie auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accountTypes.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
+				<div className="space-y-2">
                   <Label>Geld erhalten/ausgegeben</Label>
                   <Select
                     value={formData.debitCredit}
@@ -569,8 +555,50 @@ export default function HomePage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="debit">Geld ausgegeben (Soll)</SelectItem>
-                      <SelectItem value="credit">Geld erhalten (Haben)</SelectItem>
+                      <SelectItem value="debit">Geld ausgegeben</SelectItem>
+                      <SelectItem value="credit">Geld erhalten</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+				<div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    {formData.debitCredit == "credit" ? "Wer hat Geld bekommen?" : "Wer hat gezahlt?"}
+                  </Label>
+                  <Select
+                    value={formData.person}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, person: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Person auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {personAccounts.map((type) => (
+                        <SelectItem key={type.number} value={String(type.number)}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Konto
+                  </Label>
+                  <Select
+                    value={formData.account}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, account: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Konto auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {viewableAccounts.map((type) => (
+                        <SelectItem key={type.number} value={String(type.number)}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
