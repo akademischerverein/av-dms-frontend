@@ -17,6 +17,7 @@ const nextConfig = {
     }
     return config
   },
+  output: 'export',
 }
 
 export default nextConfig
