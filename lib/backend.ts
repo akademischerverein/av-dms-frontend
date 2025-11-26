@@ -63,7 +63,12 @@ const RequestInfo = async (path: string): Promise<T> => {
 }
 
 const SendRequest = async (path: string, data : Object) : Promise<T> => {
-	const respData = await fetch("https://localhost:7215/"+path, {"method": "POST", "body": JSON.stringify(data), "headers": {"Content-Type": "application/json"}, "credentials": "include"})
+	let bodyData = {"method": "POST", "credentials": "include"}
+	if (data != null && data != undefined && Object.entries(data).length > 0) {
+		bodyData["headers"] = {"Content-Type": "application/json"}
+		bodyData["body"] = JSON.stringify(data)
+	}
+	const respData = await fetch("https://localhost:7215/" + path, bodyData)
 	return respData
 }
 

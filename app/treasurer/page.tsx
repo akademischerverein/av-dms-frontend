@@ -62,12 +62,18 @@ interface Receipt {
   base64?: string
 }
 
+interface DocumentMarking {
+	markings: ("green" | "yellow" | "red")[]
+}
+
 export default function TreasurerPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking, true = authenticated, false = not authenticated
   const [documents, setDocuments] = useState<Record<number, Document>>(new Map())
+  const [markings, setMarkings] = useState<Record<number, DocumentMarking>>({})
   const [selectedReceipt, setSelectedReceipt] = useState<Document | null>(null)
+  const [selectedDocumentAllVersions, setSelectedDocumentAllVersions] = useState<Document | null>(null)
   const [editingReceipt, setEditingReceipt] = useState<Document | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [searchTerm, setSearchTerm] = useState("")
@@ -90,10 +96,16 @@ export default function TreasurerPage() {
   // Load receipts
   useEffect(() => {
 	SendRequest("documents/search", {"versionType": "CURRENT"})
-		.then((res) => res.json()).then((data) => {
+		.then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
 			const docs: Document[] = data
 			setDocuments(new Map(docs.documents.map((v) : [number, Document] => [v.documentId, v])))
 		})
+	
+	const marksRaw = typeof window != "undefined" ? localStorage.getItem("documentMarkings") : null
+	if (marksRaw) {
+		const markings = JSON.parse(marksRaw)
+		setMarkings(markings)
+	}
   }, [])
 
   const onlyDocumentsValues = [...documents.values()]
@@ -140,63 +152,58 @@ export default function TreasurerPage() {
   }
 
   const handleLogout = () => {
-	fetch("https://localhost:7215/auth/logout", {"method": "POST", "credentials": "include"})
+	SendRequest("auth/logout", {})
     toast({
       title: "Abgemeldet",
       description: "Sie wurden erfolgreich abgemeldet.",
     })
     router.replace("/treasurer/login")
   }
-
-  const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"], comment?: string) => {
-    setDocuments((prev) => {
-      const updated = prev.map((r) =>
-        r.id === receiptId ? { ...r, status: newStatus, treasurerComment: comment || r.treasurerComment } : r,
-      )
-
-      try {
-        const raw = localStorage.getItem("uploadedReceipts")
-        if (raw) {
-          const arr: Receipt[] = JSON.parse(raw)
-          const arrUpdated = arr.map((r) => (r.id === receiptId ? { ...r, status: newStatus } : r))
-          localStorage.setItem("uploadedReceipts", JSON.stringify(arrUpdated))
-        }
-      } catch (e) {
-        console.error("Failed to persist status", e)
-      }
-
-      return updated
-    })
-
-    // Auto-advance to next receipt awaiting review
-    setTimeout(() => {
-      setReceipts((current) => {
-        const pending = current.filter((r) => r.status === "UPLOADED")
-        if (pending.length === 0) {
-          setIsDialogOpen(false)
-          setSelectedReceipt(null)
-          return current
-        }
-        // Pick next pending (oldest first)
-        pending.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
-        setSelectedReceipt(pending[0])
-        return current
-      })
-    }, 0)
+  
+  const loadAllVersions = (documentId: number) => {
+	  RequestInfo("documents/metadata/" + documentId).then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
+		  setSelectedDocumentAllVersions(data)
+		  
+		  setSelectedReceipt(documents.get(documentId))
+		  setIsDialogOpen(true)
+	  })
   }
 
-  const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red") => {
-    setReceipts((prev) =>
-      prev.map((receipt) => {
-        if (receipt.id === receiptId) {
-          const newMarkings = receipt.markings.includes(marking)
-            ? receipt.markings.filter((m) => m !== marking)
-            : [...receipt.markings, marking]
-          return { ...receipt, markings: newMarkings }
-        }
-        return receipt
-      }),
-    )
+  const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"], comment?: string) => {
+	const newVersion = JSON.parse(JSON.stringify(documents.get(documentId).version))
+	newVersion.state = newStatus
+	newVersion.comment = comment
+	
+	SendRequest("documents/metadata/" + documentId, newVersion).then((res) => {if(res.status != 201) {throw new Error(res)} else return res.json()}).then((data) => {
+		RequestInfo("documents/metadata/" + documentId + "/" + data.documentVersionId).then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
+			documents.set(documentId, data)
+			
+			setTimeout(() => {
+				const pending = onlyDocumentsValues.filter((r) => r.version.state === "UPLOADED")
+				if (pending.length === 0) {
+					setIsDialogOpen(false)
+					setSelectedReceipt(null)
+				} else {
+					// Pick next pending (oldest first)
+					pending.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
+					loadAllVersions(pending[0].documentId)
+				}
+			}, 0)
+		})
+	})
+  }
+
+  const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red", comment: string) => {
+	if(!(documentId in markings)) {
+		markings[documentId] = {"comment": null, "markings": []}
+	}
+	
+	const newMarkings = markings[documentId].markings.includes(marking)
+            ? markings[documentId].markings.filter((m) => m !== marking)
+            : [...markings[documentId].markings, marking]
+	markings[documentId].markings = newMarkings
+	markings[documentId].comment = comment
+	localStorage.setItem("documentMarkings", JSON.stringify(markings))
   }
 
   const stats = {
@@ -377,7 +384,7 @@ export default function TreasurerPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {[].map((marking, index) => (
+                          {((markings[receipt.documentId] || {}).markings || []).map((marking, index) => (
                             <div key={index}>{getMarkingBadge(marking)}</div>
                           ))}
                         </div>
@@ -388,8 +395,7 @@ export default function TreasurerPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              setSelectedReceipt(receipt)
-                              setIsDialogOpen(true)
+                              loadAllVersions(receipt.documentId)
                             }}
                           >
                             <Eye className="h-4 w-4" />
@@ -449,7 +455,7 @@ export default function TreasurerPage() {
                       <div className="space-y-1">
                         <p><span className="font-medium">E-Mail:</span> {selectedReceipt.uploaderEmail}</p>
                         <p><span className="font-medium">Datei:</span> {selectedReceipt.file.filename}</p>
-                        {selectedReceipt.version.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedReceipt.version.comment}</p>}
+                        {selectedDocumentAllVersions.versions[0].comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedDocumentAllVersions.versions[0].comment}</p>}
                       </div>
 
                       {/* Details */}
@@ -464,19 +470,22 @@ export default function TreasurerPage() {
                         <Input type="number" step="0.01" defaultValue={selectedReceipt.version.receipts[0].bookings[0].amount.toFixed(2)} />
                         <Label className="block mt-3">Verwendungszweck</Label>
                         <Input defaultValue={selectedReceipt.version.receipts[0].bookings[0].text} />
+						
+						<p className="font-medium">Interne Notizen</p>
+						{selectedDocumentAllVersions.versions.slice(1).map((version) => version.comment && <p className="bg-gray-50 p-2 rounded text-xs">{version.comment}</p>)}
                       </div>
 
                       {/* Markierungen */}
                       <div className="space-y-2">
                         <p className="font-medium">Markierungen</p>
                         <div className="flex gap-2 flex-wrap">
-                          <Button size="sm" className={[].includes("green")?"bg-green-600 text-white":"bg-transparent border border-green-600 text-green-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"green")}>Korrekt</Button>
-                          <Button size="sm" className={[].includes("yellow")?"bg-yellow-500 text-white":"bg-transparent border border-yellow-500 text-yellow-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"yellow")}>Unklar</Button>
-                          <Button size="sm" className={[].includes("red")?"bg-red-600 text-white":"bg-transparent border border-red-600 text-red-600"} onClick={()=>handleMarkingToggle(selectedReceipt.id,"red")}>Fehler</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("green")?"bg-green-600 text-white":"bg-transparent border border-green-600 text-green-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"green")}>Korrekt</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("yellow")?"bg-yellow-500 text-white":"bg-transparent border border-yellow-500 text-yellow-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"yellow")}>Unklar</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("red")?"bg-red-600 text-white":"bg-transparent border border-red-600 text-red-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"red")}>Fehler</Button>
                         </div>
                       </div>
 
-                      <Textarea placeholder="Interne Notizen…" defaultValue={selectedReceipt.treasurerComment} className="mt-2" />
+                      <Textarea placeholder="Kassenprüfungsnotizen…" defaultValue={(markings[selectedReceipt.documentId] || {}).comment || ""} className="mt-2" />
                     </div>
 
                     {/* Buttons */}
