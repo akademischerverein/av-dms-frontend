@@ -44,6 +44,7 @@ interface UploadData {
   account: Number | null
   person: Number | null
   debitCredit: "debit" | "credit"
+  belegkreis: string | null
 }
 
 // OCR helper types
@@ -60,23 +61,42 @@ export default function HomePage() {
     file: null,
     comment: "",
     debitCredit: "debit",
+    belegkreis: null,
   })
- 
-  const [accounts, setAccounts] = useState([]);
-  const [isAccountsLoading, setAccountsLoading] = useState(true);
-  
+
+  const [accounts, setAccounts] = useState([])
+  const [isAccountsLoading, setAccountsLoading] = useState(true)
+  const [belegkreise, setBelegkreise] = useState([])
+  const [isBelegkreiseLoading, setBelegkreiseLoading] = useState(true)
+
   useEffect(() => {
-	  if (accounts.length > 0) return
-	  
-	  RequestInfo("proxy/accounts/all")
-	  .then((res) => res.json()).then((data) => {
-		  data.forEach((ele) => {
-			ele.label = ele.name
-			ele.value = ele.number
-		  })
-		  setAccounts(data)
-		  setAccountsLoading(false)
-	  })
+    if (accounts.length > 0) return
+
+    RequestInfo("proxy/accounts/all")
+      .then((res) => res.json()).then((data) => {
+        data.forEach((ele) => {
+          ele.label = ele.name
+          ele.value = ele.number
+        })
+        setAccounts(data)
+        setAccountsLoading(false)
+      })
+  })
+
+  // Load Belegkreise
+  useEffect(() => {
+    if (belegkreise.length > 0) return
+
+    RequestInfo("proxy/belegkreise/all")
+      .then((res) => res.json())
+      .then((data) => {
+        setBelegkreise(data)
+        setBelegkreiseLoading(false)
+      })
+      .catch((err) => {
+        console.error("Failed to load Belegkreise:", err)
+        setBelegkreiseLoading(false)
+      })
   })
 
   const [isUploading, setIsUploading] = useState(false)
@@ -85,6 +105,25 @@ export default function HomePage() {
   const [ocrSuggestions, setOcrSuggestions] = useState<string[]>([])
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrFields, setOcrFields] = useState<OcrFields>({})
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [dateInputValue, setDateInputValue] = useState("")
+
+  // Cache preview URL to prevent re-renders from recreating it
+  useEffect(() => {
+    if (formData.file) {
+      const url = URL.createObjectURL(formData.file)
+      setPreviewUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setPreviewUrl(null)
+  }, [formData.file])
+
+  // Sync dateInputValue when formData.receiptDate changes (e.g., from calendar or OCR)
+  useEffect(() => {
+    if (formData.receiptDate) {
+      setDateInputValue(format(formData.receiptDate, "dd.MM.yyyy"))
+    }
+  }, [formData.receiptDate])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -150,34 +189,46 @@ export default function HomePage() {
       // Save to localStorage
       localStorage.setItem("uploaderName", formData.uploaderName)
       localStorage.setItem("uploaderEmail", formData.uploaderEmail)
-	  const base64 = await fileToBase64(formData.file!)
-	  const fileBuffer = await formData.file!.arrayBuffer()
-	  const digest = await crypto.subtle.digest("SHA-256", fileBuffer)
-	  const hexdigest = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
-	  
-	  const receipt = {
-		  file: {
-			  filename: formData.file!.name,
-			  hash: hexdigest,
-			  hashAlgorithm: "SHA256",
-			  data: base64
-		  },
-		  uploaderName: formData.uploaderName,
-		  uploaderEmail: formData.uploaderEmail,
-		  metadata: {
-			  receiptDate: formData.receiptDate.toISOString().split("T")[0],
-			  amount: parseFloat(formData.amount),
-			  text: formData.purpose,
-			  comment: formData.comment,
-			  debit: formData.debitCredit == "debit" ? formData.account : formData.person,
-			  credit: formData.debitCredit == "credit" ? formData.account : formData.person
-		  }
-	  }
+
+      // Convert images to PDF for backend compatibility
+      let uploadFile = formData.file!
+      if (formData.file!.type.startsWith("image/")) {
+        try {
+          uploadFile = await convertImageToPdf(formData.file!)
+        } catch (err) {
+          console.error("Image to PDF conversion failed, uploading original", err)
+        }
+      }
+
+      const base64 = await fileToBase64(uploadFile)
+      const fileBuffer = await uploadFile.arrayBuffer()
+      const digest = await crypto.subtle.digest("SHA-256", fileBuffer)
+      const hexdigest = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
+
+      const receipt = {
+        file: {
+          filename: uploadFile.name.replace(/\.(png|jpeg|jpg)$/i, ".pdf"),
+          hash: hexdigest,
+          hashAlgorithm: "SHA256",
+          data: base64
+        },
+        uploaderName: formData.uploaderName,
+        uploaderEmail: formData.uploaderEmail,
+        metadata: {
+          receiptDate: formData.receiptDate.toISOString().split("T")[0],
+          amount: parseFloat(formData.amount),
+          text: formData.purpose,
+          comment: formData.comment,
+          debit: formData.debitCredit == "debit" ? formData.account : formData.person,
+          credit: formData.debitCredit == "credit" ? formData.account : formData.person,
+          belegkreis: formData.belegkreis
+        }
+      }
 
       const upload = await SendRequest("documents/upload", receipt)
-	  if (upload.status > 299) {
-		  throw new Exception()
-	  }
+      if (upload.status > 299) {
+        throw new Error("Upload failed")
+      }
       setUploadProgress(100)
 
       toast({
@@ -195,9 +246,10 @@ export default function HomePage() {
         comment: "",
         account: null,
         debitCredit: "debit",
+        belegkreis: null,
       }))
     } catch (error) {
-		console.log(error)
+      console.log(error)
       toast({
         title: "Fehler beim Upload",
         description: "Bitte versuchen Sie es erneut.",
@@ -248,7 +300,7 @@ export default function HomePage() {
 
   const convertPdfToImage = async (pdfFile: File): Promise<string> => {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf")
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
 
     const data = await pdfFile.arrayBuffer()
     const pdf = await pdfjs.getDocument(data).promise
@@ -375,27 +427,55 @@ export default function HomePage() {
     })
   }
 
+  // Convert image to PDF using jsPDF for backend compatibility
+  const convertImageToPdf = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image()
+      img.onload = async () => {
+        try {
+          const { jsPDF } = await import("jspdf")
+          const pdf = new jsPDF({
+            orientation: img.width > img.height ? "landscape" : "portrait",
+            unit: "px",
+            format: [img.width, img.height]
+          })
+          pdf.addImage(img, "JPEG", 0, 0, img.width, img.height)
+          const pdfBlob = pdf.output("blob")
+          const pdfFile = new File([pdfBlob], file.name.replace(/\.(png|jpeg|jpg)$/i, ".pdf"), {
+            type: "application/pdf"
+          })
+          URL.revokeObjectURL(img.src)
+          resolve(pdfFile)
+        } catch (err) {
+          reject(err)
+        }
+      }
+      img.onerror = reject
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
-		  const base64DataUrl = reader.result as string
-		  resolve(base64DataUrl.split(",")[1])
-	  }
+        const base64DataUrl = reader.result as string
+        resolve(base64DataUrl.split(",")[1])
+      }
       reader.onerror = reject
       reader.readAsDataURL(file)
     })
   }
-  
+
   const personAccounts = accounts.filter((acc) => {
-	  return acc.type == "DEBTORS" || acc.type == "CREDITORS"
+    return acc.type == "DEBTORS" || acc.type == "CREDITORS"
   })
-  
+
   const viewableAccounts = accounts.filter((acc) => {
-	  const disallowedTypes = [
-		"DEBTORS", "CREDITORS", "TRANSIT", "DEPRICATION_EXPENSES", "EQUITIES", "FINANCIAL", "CONNECTED_ENTITIES", "OPENING_BALANCES"
-	  ]
-	  return !disallowedTypes.includes(acc.type)
+    const disallowedTypes = [
+      "DEBTORS", "CREDITORS", "TRANSIT", "DEPRICATION_EXPENSES", "EQUITIES", "FINANCIAL", "CONNECTED_ENTITIES", "OPENING_BALANCES"
+    ]
+    return !disallowedTypes.includes(acc.type)
   }).sort((a, b) => b.number - a.number)
 
   return (
@@ -456,35 +536,68 @@ export default function HomePage() {
                     <CalendarIcon className="h-4 w-4" />
                     Belegdatum *
                   </Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !formData.receiptDate && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.receiptDate
-                          ? format(formData.receiptDate, "dd.MM.yyyy", { locale: de })
-                          : "Datum auswählen"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.receiptDate}
-                        locale={de}
-                        onSelect={(date) => {
-                          setFormData((prev) => ({ ...prev, receiptDate: date }))
-                          checkForDuplicates()
-                        }}
-                        disabled={(date) => date > new Date()}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="TT.MM.JJJJ"
+                      value={dateInputValue}
+                      onChange={(e) => {
+                        // Get raw input and strip non-digits for processing
+                        let rawValue = e.target.value
+                        let digits = rawValue.replace(/\D/g, "")
+                        if (digits.length > 8) digits = digits.slice(0, 8)
+
+                        // Auto-insert dots
+                        let formatted = digits
+                        if (digits.length >= 2) formatted = digits.slice(0, 2) + "." + digits.slice(2)
+                        if (digits.length >= 4) formatted = digits.slice(0, 2) + "." + digits.slice(2, 4) + "." + digits.slice(4)
+
+                        setDateInputValue(formatted)
+
+                        // Parse and validate complete date
+                        if (digits.length === 8) {
+                          const day = parseInt(digits.slice(0, 2), 10)
+                          const month = parseInt(digits.slice(2, 4), 10)
+                          const year = parseInt(digits.slice(4, 8), 10)
+                          const parsedDate = new Date(year, month - 1, day)
+                          if (
+                            parsedDate.getDate() === day &&
+                            parsedDate.getMonth() === month - 1 &&
+                            parsedDate.getFullYear() === year &&
+                            parsedDate <= new Date()
+                          ) {
+                            setFormData((prev) => ({ ...prev, receiptDate: parsedDate }))
+                            checkForDuplicates()
+                          } else {
+                            setFormData((prev) => ({ ...prev, receiptDate: undefined }))
+                          }
+                        } else {
+                          setFormData((prev) => ({ ...prev, receiptDate: undefined }))
+                        }
+                      }}
+                      className="flex-1"
+                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="icon" className="shrink-0">
+                          <CalendarIcon className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="end">
+                        <Calendar
+                          mode="single"
+                          selected={formData.receiptDate}
+                          locale={de}
+                          onSelect={(date) => {
+                            setFormData((prev) => ({ ...prev, receiptDate: date }))
+                            checkForDuplicates()
+                          }}
+                          disabled={(date) => date > new Date()}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="amount" className="flex items-center gap-2">
@@ -543,7 +656,7 @@ export default function HomePage() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-				<div className="space-y-2">
+                <div className="space-y-2">
                   <Label>Geld erhalten/ausgegeben</Label>
                   <Select
                     value={formData.debitCredit}
@@ -560,7 +673,7 @@ export default function HomePage() {
                     </SelectContent>
                   </Select>
                 </div>
-				<div className="space-y-2">
+                <div className="space-y-2">
                   <Label className="flex items-center gap-2">
                     <User className="h-4 w-4" />
                     {formData.debitCredit == "credit" ? "Wer hat Geld bekommen?" : "Wer hat gezahlt?"}
@@ -604,6 +717,35 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {/* Belegkreis Selection */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Belegkreis
+                  </Label>
+                  <Select
+                    value={formData.belegkreis || undefined}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, belegkreis: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={isBelegkreiseLoading ? "Lädt..." : "Belegkreis auswählen"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {belegkreise.map((bk: any) => (
+                        <SelectItem key={bk.id || bk.name} value={String(bk.id || bk.name)}>
+                          {bk.name} {bk.prefix ? `(${bk.prefix})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Beleg-Nr. (wird automatisch vergeben)</Label>
+                  <Input disabled placeholder="Automatisch" className="bg-gray-50" />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="file">Beleg hochladen *</Label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
@@ -622,15 +764,15 @@ export default function HomePage() {
                   </Label>
                   {formData.file && (
                     <div className="mt-4">
-                      {formData.file.type.startsWith("image/") ? (
+                      {formData.file.type.startsWith("image/") && previewUrl ? (
                         <img
-                          src={URL.createObjectURL(formData.file)}
+                          src={previewUrl}
                           alt="Vorschau"
                           className="max-h-56 rounded-md mx-auto"
                         />
-                      ) : formData.file.type === "application/pdf" ? (
+                      ) : formData.file.type === "application/pdf" && previewUrl ? (
                         <embed
-                          src={URL.createObjectURL(formData.file)}
+                          src={previewUrl}
                           type="application/pdf"
                           className="w-full h-64 border rounded-md"
                         />
