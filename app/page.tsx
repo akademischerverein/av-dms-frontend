@@ -44,7 +44,6 @@ interface UploadData {
   account: Number | null
   person: Number | null
   debitCredit: "debit" | "credit"
-  belegkreis: string | null
 }
 
 // OCR helper types
@@ -61,13 +60,10 @@ export default function HomePage() {
     file: null,
     comment: "",
     debitCredit: "debit",
-    belegkreis: null,
   })
 
   const [accounts, setAccounts] = useState([])
   const [isAccountsLoading, setAccountsLoading] = useState(true)
-  const [belegkreise, setBelegkreise] = useState([])
-  const [isBelegkreiseLoading, setBelegkreiseLoading] = useState(true)
 
   useEffect(() => {
     if (accounts.length > 0) return
@@ -80,22 +76,6 @@ export default function HomePage() {
         })
         setAccounts(data)
         setAccountsLoading(false)
-      })
-  })
-
-  // Load Belegkreise
-  useEffect(() => {
-    if (belegkreise.length > 0) return
-
-    RequestInfo("proxy/belegkreise/all")
-      .then((res) => res.json())
-      .then((data) => {
-        setBelegkreise(data)
-        setBelegkreiseLoading(false)
-      })
-      .catch((err) => {
-        console.error("Failed to load Belegkreise:", err)
-        setBelegkreiseLoading(false)
       })
   })
 
@@ -220,8 +200,7 @@ export default function HomePage() {
           text: formData.purpose,
           comment: formData.comment,
           debit: formData.debitCredit == "debit" ? formData.account : formData.person,
-          credit: formData.debitCredit == "credit" ? formData.account : formData.person,
-          belegkreis: formData.belegkreis
+          credit: formData.debitCredit == "credit" ? formData.account : formData.person
         }
       }
 
@@ -245,8 +224,7 @@ export default function HomePage() {
         file: null,
         comment: "",
         account: null,
-        debitCredit: "debit",
-        belegkreis: null,
+        debitCredit: "debit"
       }))
     } catch (error) {
       console.log(error)
@@ -714,35 +692,6 @@ export default function HomePage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-
-              {/* Belegkreis Selection */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Belegkreis
-                  </Label>
-                  <Select
-                    value={formData.belegkreis || undefined}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, belegkreis: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={isBelegkreiseLoading ? "Lädt..." : "Belegkreis auswählen"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {belegkreise.map((bk: any) => (
-                        <SelectItem key={bk.id || bk.name} value={String(bk.id || bk.name)}>
-                          {bk.name} {bk.prefix ? `(${bk.prefix})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Beleg-Nr. (wird automatisch vergeben)</Label>
-                  <Input disabled placeholder="Automatisch" className="bg-gray-50" />
                 </div>
               </div>
 

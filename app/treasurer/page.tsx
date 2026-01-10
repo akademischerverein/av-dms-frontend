@@ -70,6 +70,9 @@ export default function TreasurerPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking, true = authenticated, false = not authenticated
+  const [isBelegkreiseLoading, setBelegkreiseLoading] = useState(true)
+  const [belegkreise, setBelegkreise] = useState([])
+  const [comment, setComment] = useState<string>(null)
   const [documents, setDocuments] = useState<Record<number, Document>>(new Map())
   const [markings, setMarkings] = useState<Record<number, DocumentMarking>>({})
   const [selectedReceipt, setSelectedReceipt] = useState<Document | null>(null)
@@ -107,6 +110,41 @@ export default function TreasurerPage() {
 		setMarkings(markings)
 	}
   }, [])
+  
+    // Load Belegkreise
+  useEffect(() => {
+    if (belegkreise.length > 0) return
+
+    RequestInfo("documents/groups")
+      .then((res) => res.json())
+      .then((data) => {
+        setBelegkreise(data)
+        setBelegkreiseLoading(false)
+      })
+      .catch((err) => {
+        console.error("Failed to load Belegkreise:", err)
+        setBelegkreiseLoading(false)
+      })
+  })
+  
+  const [accounts, setAccounts] = useState([])
+  const [isAccountsLoading, setAccountsLoading] = useState(false)
+
+  useEffect(() => {
+    if (accounts.length > 0 || isAccountsLoading) return
+	setAccountsLoading(true);
+
+    RequestInfo("proxy/accounts/all")
+      .then((res) => res.json()).then((data) => {
+        data.forEach((ele) => {
+          ele.label = ele.name
+          ele.value = ele.number
+        })
+		data.sort((a, b) => a.number - b.number)
+        setAccounts(data)
+        setAccountsLoading(false)
+      })
+  })
 
   const onlyDocumentsValues = [...documents.values()]
   
@@ -163,14 +201,14 @@ export default function TreasurerPage() {
   const loadAllVersions = (documentId: number) => {
 	  RequestInfo("documents/metadata/" + documentId).then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
 		  setSelectedDocumentAllVersions(data)
-		  
+		  setComment(null);
 		  setSelectedReceipt(documents.get(documentId))
 		  setIsDialogOpen(true)
 	  })
   }
 
-  const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"], comment?: string) => {
-	const newVersion = JSON.parse(JSON.stringify(documents.get(documentId).version))
+  const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"]) => {
+	const newVersion = JSON.parse(JSON.stringify(selectedReceipt.version))
 	newVersion.state = newStatus
 	newVersion.comment = comment
 	
@@ -384,8 +422,8 @@ export default function TreasurerPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {((markings[receipt.documentId] || {}).markings || []).map((marking, index) => (
-                            <div key={index}>{getMarkingBadge(marking)}</div>
+                          {((markings[receipt.documentId] || {}).markings || []).map((marking) => (
+                            <div key={marking}>{getMarkingBadge(marking)}</div>
                           ))}
                         </div>
                       </TableCell>
@@ -471,8 +509,80 @@ export default function TreasurerPage() {
                         <Label className="block mt-3">Verwendungszweck</Label>
                         <Input defaultValue={selectedReceipt.version.receipts[0].bookings[0].text} />
 						
+						<Label className="block mt-3">
+							<FileText className="h-4 w-4" />
+							Belegkreis
+						</Label>
+						<Select
+							value={selectedReceipt.version.receipts[0].group || undefined}
+							onValueChange={(value) => {
+								const kreis = belegkreise.find((bk) => bk.group == value);
+								
+								setSelectedReceipt((prev) => ({
+									...prev,
+									version: {
+										...prev.version,
+										receipts: [
+										{
+											...prev.version.receipts[0],
+											group: value,
+											number: value == undefined ? undefined : kreis.lastUsedNumber + 1,
+										},
+										],
+									},
+								}))
+							}}
+						>
+							<SelectTrigger>
+								<SelectValue placeholder={isBelegkreiseLoading ? "Lädt..." : "Belegkreis auswählen"} />
+							</SelectTrigger>
+							<SelectContent>
+								{belegkreise.map((bk: any) => (
+									<SelectItem key={bk.group} value={String(bk.group)}>
+										{bk.group}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						<Label>Beleg-Nr. (wird automatisch vergeben)</Label>
+						<Input disabled placeholder="Automatisch" value={selectedReceipt.version.receipts[0].number ?? ""} className="bg-gray-50" />
+						
+						<Label>Soll</Label>
+						<Select
+							value={String(selectedReceipt.version.receipts[0].bookings[0].debit)}
+							onValueChange={(value) => setSelectedReceipt((prev) => ({...prev, version: {...prev.version, receipts: [{...prev.version.receipts[0], bookings: [{...prev.version.receipts[0].bookings[0], debit: Number(value)}]}]}}))}
+						>
+							<SelectTrigger>
+								<SelectValue placeholder="Konto auswählen" />
+							</SelectTrigger>
+							<SelectContent>
+								{accounts.map((type) => (
+									<SelectItem key={type.number} value={String(type.number)}>
+										{type.number}&nbsp;{type.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						<Label>Haben</Label>
+						<Select
+							value={String(selectedReceipt.version.receipts[0].bookings[0].credit)}
+							onValueChange={(value) => setSelectedReceipt((prev) => ({...prev, version: {...prev.version, receipts: [{...prev.version.receipts[0], bookings: [{...prev.version.receipts[0].bookings[0], credit: Number(value)}]}]}}))}
+						>
+							<SelectTrigger>
+								<SelectValue placeholder="Konto auswählen" />
+							</SelectTrigger>
+							<SelectContent>
+								{accounts.map((type) => (
+									<SelectItem key={type.number} value={String(type.number)}>
+										{type.number}&nbsp;{type.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						
 						<p className="font-medium">Interne Notizen</p>
-						{selectedDocumentAllVersions.versions.slice(1).map((version) => version.comment && <p className="bg-gray-50 p-2 rounded text-xs">{version.comment}</p>)}
+						{selectedReceipt.version.state === "UPLOADED" && <Textarea value={comment || ""} placeholder="Zusätzliche Interne Notitzen…" className="mt-2" onChange={(e) => { setComment(e.target.value) }} />}
+						{selectedDocumentAllVersions.versions.slice(1).map((version) => version.comment && <p key={version.documentVersionId} className={(selectedReceipt.version.state === "REJECTED" ? "bg-red-50" : selectedReceipt.version.state === "APPROVED" ?  "bg-green-50" : "bg-gray-50") + " p-2 rounded text-xs"}>{version.comment}</p>)}
                       </div>
 
                       {/* Markierungen */}
@@ -493,8 +603,8 @@ export default function TreasurerPage() {
                       <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)}>Schließen</Button>
                       {selectedReceipt.version.state === "UPLOADED" && (
                         <>
-                          <Button size="sm" className="bg-red-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"REJECTED","Beleg abgelehnt")}>Ablehnen</Button>
-                          <Button size="sm" className="bg-green-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"APPROVED","Beleg genehmigt")}>Genehmigen</Button>
+                          <Button size="sm" className="bg-red-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"REJECTED")}>Ablehnen</Button>
+                          <Button size="sm" className="bg-green-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"APPROVED")}>Genehmigen</Button>
                         </>
                       )}
                     </div>
