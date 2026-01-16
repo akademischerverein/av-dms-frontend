@@ -73,6 +73,9 @@ export default function TreasurerPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking, true = authenticated, false = not authenticated
+  const [isBelegkreiseLoading, setBelegkreiseLoading] = useState(true)
+  const [belegkreise, setBelegkreise] = useState([])
+  const [comment, setComment] = useState<string>(null)
   const [documents, setDocuments] = useState<Record<number, Document>>(new Map())
   const [markings, setMarkings] = useState<Record<number, DocumentMarking>>({})
   const [selectedReceipt, setSelectedReceipt] = useState<Document | null>(null)
@@ -145,6 +148,41 @@ export default function TreasurerPage() {
       .then((data) => setAccounts(data))
       .catch((err) => console.error("Failed to load accounts:", err))
   }, [])
+  
+    // Load Belegkreise
+  useEffect(() => {
+    if (belegkreise.length > 0) return
+
+    RequestInfo("documents/groups")
+      .then((res) => res.json())
+      .then((data) => {
+        setBelegkreise(data)
+        setBelegkreiseLoading(false)
+      })
+      .catch((err) => {
+        console.error("Failed to load Belegkreise:", err)
+        setBelegkreiseLoading(false)
+      })
+  })
+  
+  const [accounts, setAccounts] = useState([])
+  const [isAccountsLoading, setAccountsLoading] = useState(false)
+
+  useEffect(() => {
+    if (accounts.length > 0 || isAccountsLoading) return
+	setAccountsLoading(true);
+
+    RequestInfo("proxy/accounts/all")
+      .then((res) => res.json()).then((data) => {
+        data.forEach((ele) => {
+          ele.label = ele.name
+          ele.value = ele.number
+        })
+		data.sort((a, b) => a.number - b.number)
+        setAccounts(data)
+        setAccountsLoading(false)
+      })
+  })
 
   const onlyDocumentsValues = [...documents.values()]
 
@@ -575,8 +613,8 @@ export default function TreasurerPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {((markings[receipt.documentId] || {}).markings || []).map((marking, index) => (
-                            <div key={index}>{getMarkingBadge(marking)}</div>
+                          {((markings[receipt.documentId] || {}).markings || []).map((marking) => (
+                            <div key={marking}>{getMarkingBadge(marking)}</div>
                           ))}
                         </div>
                       </TableCell>
