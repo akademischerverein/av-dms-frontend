@@ -33,13 +33,16 @@ import {
   Clock,
   TrendingUp,
   LogOut,
+  Plus,
+  Settings,
+  Save,
 } from "lucide-react"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
 import Image from "next/image"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { RequestInfo, SendRequest, Document } from "@/lib/backend"
+import { RequestInfo, SendRequest, PutRequest, Document, Group } from "@/lib/backend"
 
 interface Receipt {
   id: number
@@ -63,7 +66,7 @@ interface Receipt {
 }
 
 interface DocumentMarking {
-	markings: ("green" | "yellow" | "red")[]
+  markings: ("green" | "yellow" | "red")[]
 }
 
 export default function TreasurerPage() {
@@ -80,36 +83,71 @@ export default function TreasurerPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
 
+  // Groups (Belegkreise) state
+  const [groups, setGroups] = useState<Group[]>([])
+  const [isGroupsDialogOpen, setIsGroupsDialogOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState("")
+
+  // Accounts state
+  const [accounts, setAccounts] = useState<any[]>([])
+
+  // Edited form state for document detail dialog
+  const [editedReceiptDate, setEditedReceiptDate] = useState("")
+  const [editedAmount, setEditedAmount] = useState("")
+  const [editedText, setEditedText] = useState("")
+  const [editedDebit, setEditedDebit] = useState<number | null>(null)
+  const [editedCredit, setEditedCredit] = useState<number | null>(null)
+  const [editedGroup, setEditedGroup] = useState<string | null>(null)
+  const [editedNumber, setEditedNumber] = useState<number | null>(null)
+  const [editedComment, setEditedComment] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
   // Check authentication on mount
   useEffect(() => {
-	RequestInfo("auth/whoami").then((res) => res.json()).then((data) => {
-		setIsAuthenticated(data.isAuthenticated)
-		
-		if (!data.isAuthenticated) {
-			// Not authenticated or session expired
-			setIsAuthenticated(false)
-			router.replace("/treasurer/login")
-		}
-	})
+    RequestInfo("auth/whoami").then((res) => res.json()).then((data) => {
+      setIsAuthenticated(data.isAuthenticated)
+
+      if (!data.isAuthenticated) {
+        // Not authenticated or session expired
+        setIsAuthenticated(false)
+        router.replace("/treasurer/login")
+      }
+    })
   }, [router])
 
   // Load receipts
   useEffect(() => {
-	SendRequest("documents/search", {"versionType": "CURRENT"})
-		.then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
-			const docs: Document[] = data
-			setDocuments(new Map(docs.documents.map((v) : [number, Document] => [v.documentId, v])))
-		})
-	
-	const marksRaw = typeof window != "undefined" ? localStorage.getItem("documentMarkings") : null
-	if (marksRaw) {
-		const markings = JSON.parse(marksRaw)
-		setMarkings(markings)
-	}
+    SendRequest("documents/search", { "versionType": "CURRENT" })
+      .then((res) => { if (res.status != 200) { throw new Error(res) } else return res.json() }).then((data) => {
+        const docs: Document[] = data
+        setDocuments(new Map(docs.documents.map((v): [number, Document] => [v.documentId, v])))
+      })
+
+    const marksRaw = typeof window != "undefined" ? localStorage.getItem("documentMarkings") : null
+    if (marksRaw) {
+      const markings = JSON.parse(marksRaw)
+      setMarkings(markings)
+    }
+  }, [])
+
+  // Load groups (Belegkreise)
+  useEffect(() => {
+    RequestInfo("documents/groups")
+      .then((res) => { if (res.status != 200) { throw new Error(res) } else return res.json() })
+      .then((data) => setGroups(data))
+      .catch((err) => console.error("Failed to load groups:", err))
+  }, [])
+
+  // Load accounts
+  useEffect(() => {
+    RequestInfo("proxy/accounts/all")
+      .then((res) => res.json())
+      .then((data) => setAccounts(data))
+      .catch((err) => console.error("Failed to load accounts:", err))
   }, [])
 
   const onlyDocumentsValues = [...documents.values()]
-  
+
   const filteredReceipts = onlyDocumentsValues.filter((receipt) => {
     const matchesStatus = filterStatus === "all" || receipt.version.state === filterStatus
     const matchesSearch =
@@ -152,58 +190,211 @@ export default function TreasurerPage() {
   }
 
   const handleLogout = () => {
-	SendRequest("auth/logout", {})
+    SendRequest("auth/logout", {})
     toast({
       title: "Abgemeldet",
       description: "Sie wurden erfolgreich abgemeldet.",
     })
     router.replace("/treasurer/login")
   }
-  
+
   const loadAllVersions = (documentId: number) => {
-	  RequestInfo("documents/metadata/" + documentId).then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
-		  setSelectedDocumentAllVersions(data)
-		  
-		  setSelectedReceipt(documents.get(documentId))
-		  setIsDialogOpen(true)
-	  })
+    RequestInfo("documents/metadata/" + documentId).then((res) => { if (res.status != 200) { throw new Error(res) } else return res.json() }).then((data) => {
+      setSelectedDocumentAllVersions(data)
+
+      const doc = documents.get(documentId)
+      setSelectedReceipt(doc)
+
+      // Initialize edited form state from current version
+      if (doc && doc.version && doc.version.receipts && doc.version.receipts[0]) {
+        const receipt = doc.version.receipts[0]
+        const booking = receipt.bookings?.[0] || {}
+        setEditedReceiptDate(receipt.date || "")
+        setEditedAmount(String(booking.amount || ""))
+        setEditedText(booking.text || "")
+        setEditedDebit(booking.debit || null)
+        setEditedCredit(booking.credit || null)
+        setEditedGroup(receipt.group || null)
+        setEditedNumber(receipt.number || null)
+        setEditedComment(doc.version.comment || "")
+      }
+
+      setIsDialogOpen(true)
+    })
+  }
+
+  const saveDocumentChanges = async (documentId: number, newStatus?: string) => {
+    if (!selectedReceipt) return
+    setIsSaving(true)
+
+    try {
+      const newVersion = {
+        comment: editedComment,
+        receipts: [
+          {
+            date: editedReceiptDate,
+            group: editedGroup || undefined,
+            number: editedNumber || undefined,
+            bookings: [
+              {
+                amount: parseFloat(editedAmount),
+                text: editedText,
+                debit: editedDebit || undefined,
+                credit: editedCredit || undefined,
+              }
+            ]
+          }
+        ],
+        state: newStatus || selectedReceipt.version.state
+      }
+
+      const res = await SendRequest("documents/metadata/" + documentId, newVersion)
+      if (res.status !== 201) {
+        throw new Error("Save failed")
+      }
+
+      const result = await res.json()
+
+      // Reload the documents
+      const docRes = await SendRequest("documents/search", { "versionType": "CURRENT" })
+      if (docRes.status === 200) {
+        const data = await docRes.json()
+        setDocuments(new Map(data.documents.map((v: any): [number, Document] => [v.documentId, v])))
+      }
+
+      // Reload groups in case numbers changed
+      const groupsRes = await RequestInfo("documents/groups")
+      if (groupsRes.status === 200) {
+        const groupsData = await groupsRes.json()
+        setGroups(groupsData)
+      }
+
+      toast({
+        title: "Änderungen gespeichert",
+        description: `Dokument ${documentId} wurde aktualisiert.`,
+      })
+
+      if (newStatus === "APPROVED" || newStatus === "REJECTED") {
+        // Move to next pending document
+        setTimeout(() => {
+          const pending = [...documents.values()].filter((r) => r.version.state === "UPLOADED")
+          if (pending.length === 0) {
+            setIsDialogOpen(false)
+            setSelectedReceipt(null)
+          } else {
+            pending.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
+            loadAllVersions(pending[0].documentId)
+          }
+        }, 0)
+      } else {
+        setIsDialogOpen(false)
+      }
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Fehler beim Speichern",
+        description: "Bitte versuchen Sie es erneut.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const createGroup = async () => {
+    if (!newGroupName.trim()) return
+
+    try {
+      const res = await SendRequest("documents/groups", { group: newGroupName })
+      if (res.status !== 201 && res.status !== 200) {
+        throw new Error("Create group failed")
+      }
+
+      // Reload groups
+      const groupsRes = await RequestInfo("documents/groups")
+      if (groupsRes.status === 200) {
+        const groupsData = await groupsRes.json()
+        setGroups(groupsData)
+      }
+
+      setNewGroupName("")
+      toast({
+        title: "Belegkreis erstellt",
+        description: `"${newGroupName}" wurde erfolgreich erstellt.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Fehler beim Erstellen",
+        description: "Bitte versuchen Sie es erneut.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const updateGroupNumber = async (group: string, lastUsedNum: number) => {
+    try {
+      const res = await PutRequest("documents/groups/" + encodeURIComponent(group), { lastUsedNum })
+      if (res.status !== 200) {
+        throw new Error("Update group failed")
+      }
+
+      // Reload groups
+      const groupsRes = await RequestInfo("documents/groups")
+      if (groupsRes.status === 200) {
+        const groupsData = await groupsRes.json()
+        setGroups(groupsData)
+      }
+
+      toast({
+        title: "Belegkreis aktualisiert",
+        description: `"${group}" Nummer auf ${lastUsedNum} gesetzt.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Fehler beim Aktualisieren",
+        description: "Bitte versuchen Sie es erneut.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleStatusChange = (documentId: number, newStatus: DocumentVersion["state"], comment?: string) => {
-	const newVersion = JSON.parse(JSON.stringify(documents.get(documentId).version))
-	newVersion.state = newStatus
-	newVersion.comment = comment
-	
-	SendRequest("documents/metadata/" + documentId, newVersion).then((res) => {if(res.status != 201) {throw new Error(res)} else return res.json()}).then((data) => {
-		RequestInfo("documents/metadata/" + documentId + "/" + data.documentVersionId).then((res) => {if(res.status != 200) {throw new Error(res)} else return res.json()}).then((data) => {
-			documents.set(documentId, data)
-			
-			setTimeout(() => {
-				const pending = onlyDocumentsValues.filter((r) => r.version.state === "UPLOADED")
-				if (pending.length === 0) {
-					setIsDialogOpen(false)
-					setSelectedReceipt(null)
-				} else {
-					// Pick next pending (oldest first)
-					pending.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
-					loadAllVersions(pending[0].documentId)
-				}
-			}, 0)
-		})
-	})
+    const newVersion = JSON.parse(JSON.stringify(documents.get(documentId).version))
+    newVersion.state = newStatus
+    newVersion.comment = comment
+
+    SendRequest("documents/metadata/" + documentId, newVersion).then((res) => { if (res.status != 201) { throw new Error(res) } else return res.json() }).then((data) => {
+      RequestInfo("documents/metadata/" + documentId + "/" + data.documentVersionId).then((res) => { if (res.status != 200) { throw new Error(res) } else return res.json() }).then((data) => {
+        documents.set(documentId, data)
+
+        setTimeout(() => {
+          const pending = onlyDocumentsValues.filter((r) => r.version.state === "UPLOADED")
+          if (pending.length === 0) {
+            setIsDialogOpen(false)
+            setSelectedReceipt(null)
+          } else {
+            // Pick next pending (oldest first)
+            pending.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
+            loadAllVersions(pending[0].documentId)
+          }
+        }, 0)
+      })
+    })
   }
 
   const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red", comment: string) => {
-	if(!(documentId in markings)) {
-		markings[documentId] = {"comment": null, "markings": []}
-	}
-	
-	const newMarkings = markings[documentId].markings.includes(marking)
-            ? markings[documentId].markings.filter((m) => m !== marking)
-            : [...markings[documentId].markings, marking]
-	markings[documentId].markings = newMarkings
-	markings[documentId].comment = comment
-	localStorage.setItem("documentMarkings", JSON.stringify(markings))
+    if (!(documentId in markings)) {
+      markings[documentId] = { "comment": null, "markings": [] }
+    }
+
+    const newMarkings = markings[documentId].markings.includes(marking)
+      ? markings[documentId].markings.filter((m) => m !== marking)
+      : [...markings[documentId].markings, marking]
+    markings[documentId].markings = newMarkings
+    markings[documentId].comment = comment
+    localStorage.setItem("documentMarkings", JSON.stringify(markings))
   }
 
   const stats = {
@@ -336,7 +527,7 @@ export default function TreasurerPage() {
                   <SelectItem value="FINALIZED">Finalisiert</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={sortOrder} onValueChange={(v: any)=>setSortOrder(v)}>
+              <Select value={sortOrder} onValueChange={(v: any) => setSortOrder(v)}>
                 <SelectTrigger className="w-36">
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
@@ -437,7 +628,7 @@ export default function TreasurerPage() {
               {selectedReceipt && (
                 <>
                   <div className="md:w-7/12 w-full h-full flex justify-center items-start bg-gray-100">
-                    <embed src={"https://localhost:7215/documents/file/"+selectedReceipt.documentId} type="application/pdf" className="w-full h-full" />
+                    <embed src={"https://localhost:7215/documents/file/" + selectedReceipt.documentId} type="application/pdf" className="w-full h-full" />
                   </div>
 
                   <div className="md:w-5/12 w-full h-full flex flex-col bg-white shadow-inner">
@@ -455,46 +646,160 @@ export default function TreasurerPage() {
                       <div className="space-y-1">
                         <p><span className="font-medium">E-Mail:</span> {selectedReceipt.uploaderEmail}</p>
                         <p><span className="font-medium">Datei:</span> {selectedReceipt.file.filename}</p>
-                        {selectedDocumentAllVersions.versions[0].comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedDocumentAllVersions.versions[0].comment}</p>}
+                        {selectedDocumentAllVersions?.versions?.[0]?.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedDocumentAllVersions.versions[0].comment}</p>}
                       </div>
 
-                      {/* Details */}
-                      <div className="space-y-2">
-                        <Label className="block">Datum</Label>
-                        <Input
-                          type="date"
-                          defaultValue={format(new Date(selectedReceipt.version.receipts[0].date), "yyyy-MM-dd")}
-                          onChange={(e)=> setSelectedReceipt(r=>{r.version.receipts[0].date = e.target.value; return r})}
-                        />
-                        <Label className="block mt-3">Betrag €</Label>
-                        <Input type="number" step="0.01" defaultValue={selectedReceipt.version.receipts[0].bookings[0].amount.toFixed(2)} />
-                        <Label className="block mt-3">Verwendungszweck</Label>
-                        <Input defaultValue={selectedReceipt.version.receipts[0].bookings[0].text} />
-						
-						<p className="font-medium">Interne Notizen</p>
-						{selectedDocumentAllVersions.versions.slice(1).map((version) => version.comment && <p className="bg-gray-50 p-2 rounded text-xs">{version.comment}</p>)}
+                      {/* Editable Details */}
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="block mb-1">Datum</Label>
+                          <Input
+                            type="date"
+                            value={editedReceiptDate}
+                            onChange={(e) => setEditedReceiptDate(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="block mb-1">Betrag €</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={editedAmount}
+                            onChange={(e) => setEditedAmount(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="block mb-1">Verwendungszweck</Label>
+                          <Input
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                          />
+                        </div>
+
+                        {/* Belegkreis & Number */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="block mb-1">Belegkreis</Label>
+                            <Select
+                              value={editedGroup || undefined}
+                              onValueChange={(value) => {
+                                setEditedGroup(value)
+                                // Auto-suggest next number
+                                const group = groups.find(g => g.group === value)
+                                if (group) {
+                                  setEditedNumber((group.lastUsedNum || 0) + 1)
+                                }
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Auswählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {groups.map((g) => (
+                                  <SelectItem key={g.group} value={g.group}>
+                                    {g.group} (#{g.lastUsedNum})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="block mb-1">Beleg-Nr.</Label>
+                            <Input
+                              type="number"
+                              value={editedNumber || ""}
+                              onChange={(e) => setEditedNumber(parseInt(e.target.value) || null)}
+                              placeholder="Nr."
+                            />
+                          </div>
+                        </div>
+
+                        {/* Accounts */}
+                        <div>
+                          <Label className="block mb-1">Soll-Konto</Label>
+                          <Select
+                            value={editedDebit ? String(editedDebit) : undefined}
+                            onValueChange={(value) => setEditedDebit(parseInt(value))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Soll-Konto auswählen" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accounts.map((acc) => (
+                                <SelectItem key={acc.number} value={String(acc.number)}>
+                                  {acc.number} - {acc.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="block mb-1">Haben-Konto</Label>
+                          <Select
+                            value={editedCredit ? String(editedCredit) : undefined}
+                            onValueChange={(value) => setEditedCredit(parseInt(value))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Haben-Konto auswählen" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accounts.map((acc) => (
+                                <SelectItem key={acc.number} value={String(acc.number)}>
+                                  {acc.number} - {acc.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Comment for new version */}
+                        <div>
+                          <Label className="block mb-1">Interne Notiz (für diese Änderung)</Label>
+                          <Textarea
+                            placeholder="Notiz zur Änderung..."
+                            value={editedComment}
+                            onChange={(e) => setEditedComment(e.target.value)}
+                          />
+                        </div>
+
+                        {/* Previous notes */}
+                        {selectedDocumentAllVersions?.versions && selectedDocumentAllVersions.versions.length > 1 && (
+                          <div>
+                            <p className="font-medium mb-2">Frühere Notizen</p>
+                            {selectedDocumentAllVersions.versions.slice(1).map((version, idx) => version.comment && (
+                              <p key={idx} className="bg-gray-50 p-2 rounded text-xs mb-1">{version.comment}</p>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Markierungen */}
                       <div className="space-y-2">
                         <p className="font-medium">Markierungen</p>
                         <div className="flex gap-2 flex-wrap">
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("green")?"bg-green-600 text-white":"bg-transparent border border-green-600 text-green-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"green")}>Korrekt</Button>
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("yellow")?"bg-yellow-500 text-white":"bg-transparent border border-yellow-500 text-yellow-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"yellow")}>Unklar</Button>
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("red")?"bg-red-600 text-white":"bg-transparent border border-red-600 text-red-600"} onClick={()=>handleMarkingToggle(selectedReceipt.documentId,"red")}>Fehler</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("green") ? "bg-green-600 text-white" : "bg-transparent border border-green-600 text-green-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "green")}>Korrekt</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("yellow") ? "bg-yellow-500 text-white" : "bg-transparent border border-yellow-500 text-yellow-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "yellow")}>Unklar</Button>
+                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("red") ? "bg-red-600 text-white" : "bg-transparent border border-red-600 text-red-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "red")}>Fehler</Button>
                         </div>
                       </div>
-
-                      <Textarea placeholder="Kassenprüfungsnotizen…" defaultValue={(markings[selectedReceipt.documentId] || {}).comment || ""} className="mt-2" />
                     </div>
 
                     {/* Buttons */}
                     <div className="border-t px-6 py-4 flex justify-end gap-3">
                       <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)}>Schließen</Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => saveDocumentChanges(selectedReceipt.documentId)}
+                        disabled={isSaving}
+                      >
+                        <Save className="h-4 w-4 mr-1" />
+                        Speichern
+                      </Button>
                       {selectedReceipt.version.state === "UPLOADED" && (
                         <>
-                          <Button size="sm" className="bg-red-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"REJECTED","Beleg abgelehnt")}>Ablehnen</Button>
-                          <Button size="sm" className="bg-green-600 text-white" onClick={()=>handleStatusChange(selectedReceipt.documentId,"APPROVED","Beleg genehmigt")}>Genehmigen</Button>
+                          <Button size="sm" className="bg-red-600 text-white" onClick={() => saveDocumentChanges(selectedReceipt.documentId, "REJECTED")} disabled={isSaving}>Ablehnen</Button>
+                          <Button size="sm" className="bg-green-600 text-white" onClick={() => saveDocumentChanges(selectedReceipt.documentId, "APPROVED")} disabled={isSaving}>Genehmigen</Button>
                         </>
                       )}
                     </div>
@@ -504,6 +809,70 @@ export default function TreasurerPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Belegkreise Management */}
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Belegkreise verwalten
+            </CardTitle>
+            <CardDescription>Erstellen und bearbeiten Sie Belegkreise für die Belegnummerierung</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3 mb-4">
+              <Input
+                placeholder="Neuer Belegkreis (z.B. 26S-ABR-)"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                className="max-w-xs"
+              />
+              <Button onClick={createGroup} disabled={!newGroupName.trim()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Erstellen
+              </Button>
+            </div>
+
+            {groups.length > 0 ? (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Belegkreis</TableHead>
+                      <TableHead>Letzte verwendete Nr.</TableHead>
+                      <TableHead>Aktionen</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((g) => (
+                      <TableRow key={g.group}>
+                        <TableCell className="font-medium">{g.group}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            defaultValue={g.lastUsedNum}
+                            onBlur={(e) => {
+                              const newNum = parseInt(e.target.value)
+                              if (newNum !== g.lastUsedNum && !isNaN(newNum)) {
+                                updateGroupNumber(g.group, newNum)
+                              }
+                            }}
+                            className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{g.lastUsedNum} Belege</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">Keine Belegkreise vorhanden. Erstellen Sie einen neuen Belegkreis oben.</p>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="text-center mt-8">
           <Button variant="outline" asChild>

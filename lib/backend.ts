@@ -41,8 +41,13 @@ interface FileMetadata {
 	hashAlgorithm: "SHA256"
 }
 
+interface Group {
+	group: string,
+	lastUsedNum: number
+}
+
 interface UploadSimple {
-	file : FileMetadata,
+	file: FileMetadata,
 	uploaderName: string,
 	uploaderEmail: string,
 	metadata: SimpleMetadata
@@ -58,18 +63,29 @@ interface SimpleMetadata {
 }
 
 const RequestInfo = async (path: string): Promise<T> => {
-	const data = await fetch("https://localhost:7215/"+path, {"credentials": "include"})
+	const data = await fetch("https://localhost:7215/" + path, { "credentials": "include" })
 	return data
 }
 
-const SendRequest = async (path: string, data : Object) : Promise<T> => {
-	let bodyData = {"method": "POST", "credentials": "include"}
+const SendRequest = async (path: string, data: Object): Promise<T> => {
+	let bodyData = { "method": "POST", "credentials": "include" }
 	if (data != null && data != undefined && Object.entries(data).length > 0) {
-		bodyData["headers"] = {"Content-Type": "application/json"}
+		bodyData["headers"] = { "Content-Type": "application/json" }
 		bodyData["body"] = JSON.stringify(data)
 	}
 	const respData = await fetch("https://localhost:7215/" + path, bodyData)
 	return respData
 }
 
-export { Document, DocumentVersion, Receipt, Booking, RequestInfo, SendRequest }
+const PutRequest = async (path: string, data: Object): Promise<T> => {
+	let bodyData = { "method": "PUT", "credentials": "include" }
+	if (data != null && data != undefined && Object.entries(data).length > 0) {
+		bodyData["headers"] = { "Content-Type": "application/json" }
+		bodyData["body"] = JSON.stringify(data)
+	}
+	const respData = await fetch("https://localhost:7215/" + path, bodyData)
+	return respData
+}
+
+export { Document, DocumentVersion, Receipt, Booking, Group, RequestInfo, SendRequest, PutRequest }
+
