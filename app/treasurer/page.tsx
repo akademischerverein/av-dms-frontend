@@ -148,41 +148,6 @@ export default function TreasurerPage() {
       .then((data) => setAccounts(data))
       .catch((err) => console.error("Failed to load accounts:", err))
   }, [])
-  
-    // Load Belegkreise
-  useEffect(() => {
-    if (belegkreise.length > 0) return
-
-    RequestInfo("documents/groups")
-      .then((res) => res.json())
-      .then((data) => {
-        setBelegkreise(data)
-        setBelegkreiseLoading(false)
-      })
-      .catch((err) => {
-        console.error("Failed to load Belegkreise:", err)
-        setBelegkreiseLoading(false)
-      })
-  })
-  
-  const [accounts, setAccounts] = useState([])
-  const [isAccountsLoading, setAccountsLoading] = useState(false)
-
-  useEffect(() => {
-    if (accounts.length > 0 || isAccountsLoading) return
-	setAccountsLoading(true);
-
-    RequestInfo("proxy/accounts/all")
-      .then((res) => res.json()).then((data) => {
-        data.forEach((ele) => {
-          ele.label = ele.name
-          ele.value = ele.number
-        })
-		data.sort((a, b) => a.number - b.number)
-        setAccounts(data)
-        setAccountsLoading(false)
-      })
-  })
 
   const onlyDocumentsValues = [...documents.values()]
 
