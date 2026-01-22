@@ -42,7 +42,7 @@ import { de } from "date-fns/locale"
 import Image from "next/image"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { RequestInfo, SendRequest, PutRequest, Document, Group } from "@/lib/backend"
+import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from "@/lib/backend"
 
 interface Receipt {
   id: number
@@ -631,7 +631,7 @@ export default function TreasurerPage() {
               {selectedReceipt && (
                 <>
                   <div className="md:w-7/12 w-full h-full flex justify-center items-start bg-gray-100">
-                    <embed src={"https://localhost:7215/documents/file/" + selectedReceipt.documentId} type="application/pdf" className="w-full h-full" />
+                    <embed src={BuildApiUrl("documents/file/" + selectedReceipt.documentId)} type="application/pdf" className="w-full h-full" />
                   </div>
 
                   <div className="md:w-5/12 w-full h-full flex flex-col bg-white shadow-inner">

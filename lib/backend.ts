@@ -62,8 +62,16 @@ interface SimpleMetadata {
 	credit?: Number
 }
 
+const BuildApiUrl = (path: string): string => {
+    let baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!baseUrl) {
+        baseUrl = "https://localhost:7215/";
+    }
+    return baseUrl.replace(/\/$/, "") + "/" + path
+}
+
 const RequestInfo = async (path: string): Promise<T> => {
-	const data = await fetch("https://localhost:7215/" + path, { "credentials": "include" })
+	const data = await fetch(BuildApiUrl(path), { "credentials": "include" })
 	return data
 }
 
@@ -73,7 +81,7 @@ const SendRequest = async (path: string, data: Object): Promise<T> => {
 		bodyData["headers"] = { "Content-Type": "application/json" }
 		bodyData["body"] = JSON.stringify(data)
 	}
-	const respData = await fetch("https://localhost:7215/" + path, bodyData)
+	const respData = await fetch(BuildApiUrl(path), bodyData)
 	return respData
 }
 
@@ -83,9 +91,9 @@ const PutRequest = async (path: string, data: Object): Promise<T> => {
 		bodyData["headers"] = { "Content-Type": "application/json" }
 		bodyData["body"] = JSON.stringify(data)
 	}
-	const respData = await fetch("https://localhost:7215/" + path, bodyData)
+	const respData = await fetch(BuildApiUrl(path), bodyData)
 	return respData
 }
 
-export { Document, DocumentVersion, Receipt, Booking, Group, RequestInfo, SendRequest, PutRequest }
+export { Document, DocumentVersion, Receipt, Booking, Group, RequestInfo, SendRequest, PutRequest, BuildApiUrl }
 
