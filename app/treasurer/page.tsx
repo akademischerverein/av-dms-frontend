@@ -42,7 +42,8 @@ import { de } from "date-fns/locale"
 import Image from "next/image"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from "@/lib/backend"
+import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from \"@/lib/backend\"
+import { AccountSelector } from \"@/components/AccountSelector\"
 
 interface Receipt {
   id: number
@@ -720,39 +721,21 @@ export default function TreasurerPage() {
                         {/* Accounts */}
                         <div>
                           <Label className="block mb-1">Soll-Konto</Label>
-                          <Select
-                            value={editedDebit ? String(editedDebit) : undefined}
-                            onValueChange={(value) => setEditedDebit(parseInt(value))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Soll-Konto auswählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {accounts.map((acc) => (
-                                <SelectItem key={acc.number} value={String(acc.number)}>
-                                  {acc.number} - {acc.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <AccountSelector
+                            accounts={accounts}
+                            value={editedDebit}
+                            onValueChange={(value) => setEditedDebit(value)}
+                            placeholder="Soll-Konto auswählen"
+                          />
                         </div>
                         <div>
                           <Label className="block mb-1">Haben-Konto</Label>
-                          <Select
-                            value={editedCredit ? String(editedCredit) : undefined}
-                            onValueChange={(value) => setEditedCredit(parseInt(value))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Haben-Konto auswählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {accounts.map((acc) => (
-                                <SelectItem key={acc.number} value={String(acc.number)}>
-                                  {acc.number} - {acc.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <AccountSelector
+                            accounts={accounts}
+                            value={editedCredit}
+                            onValueChange={(value) => setEditedCredit(value)}
+                            placeholder="Haben-Konto auswählen"
+                          />
                         </div>
 
                         {/* Comment for new version */}

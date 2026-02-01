@@ -32,6 +32,7 @@ import { format, parse } from "date-fns"
 import { de } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { RequestInfo, SendRequest } from "@/lib/backend"
+import { AccountSelector } from "@/components/AccountSelector"
 
 interface UploadData {
   receiptDate: Date | undefined
@@ -676,21 +677,13 @@ export default function HomePage() {
                     <Building2 className="h-4 w-4" />
                     Konto
                   </Label>
-                  <Select
+                  <AccountSelector
+                    accounts={accounts}
                     value={formData.account}
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, account: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Konto auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {viewableAccounts.map((type) => (
-                        <SelectItem key={type.number} value={String(type.number)}>
-                          {type.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Konto auswählen"
+                    excludeTypes={["DEBTORS", "CREDITORS", "TRANSIT", "DEPRICATION_EXPENSES", "EQUITIES", "FINANCIAL", "CONNECTED_ENTITIES", "OPENING_BALANCES"]}
+                  />
                 </div>
               </div>
 
