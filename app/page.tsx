@@ -204,7 +204,7 @@ export default function HomePage() {
         }
       }
 
-      const upload = await SendRequest("documents/upload", receipt)
+      const upload = await SendRequest("documents/upload/simple", receipt)
       if (upload.status > 299) {
         throw new Error("Upload failed")
       }

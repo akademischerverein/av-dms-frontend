@@ -21,7 +21,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   
   useEffect(() => {
-	fetch("https://localhost:7215/auth/whoami", {"credentials": "include"}).then((res) => res.json()).then((data) => {
+	fetch("https://belege.av-da.de/api/auth/whoami", {"credentials": "include"}).then((res) => res.json()).then((data) => {
 		if (data.isAuthenticated) {
 			toast({
 				title: "Bereits angemeldet",
@@ -40,7 +40,7 @@ export default function LoginPage() {
 
     // Simulate a small delay for better UX
     await new Promise((resolve) => setTimeout(resolve, 300))
-	let resp = await fetch("https://localhost:7215/auth/login", {"method": "POST", "body": JSON.stringify({"username": username, "password": password}), "headers": {"Content-Type": "application/json"}, "credentials": "include"})
+	let resp = await fetch("https://belege.av-da.de/api/auth/login", {"method": "POST", "body": JSON.stringify({"username": username, "password": password}), "headers": {"Content-Type": "application/json"}, "credentials": "include"})
 	
 	if (resp.status >= 500) {
 		setError("Server-Fehler. Bitte versuchen Sie es später erneut.")

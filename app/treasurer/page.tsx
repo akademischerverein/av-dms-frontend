@@ -42,8 +42,8 @@ import { de } from "date-fns/locale"
 import Image from "next/image"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from \"@/lib/backend\"
-import { AccountSelector } from \"@/components/AccountSelector\"
+import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from "@/lib/backend"
+import { AccountSelector } from "@/components/AccountSelector"
 
 interface Receipt {
   id: number
