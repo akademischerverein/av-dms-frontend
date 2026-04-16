@@ -19,31 +19,49 @@ export interface Account {
     value?: number
 }
 
-// Category configuration with German labels
+// Category configuration with user-friendly German labels
+// Categories can be customized based on the organization's needs
 const ACCOUNT_CATEGORIES = {
-    expenses: {
-        label: "Aufwand",
-        types: ["EXPENSES", "DEPRICATION_EXPENSES", "OTHER_EXPENSES"],
+    food: {
+        label: "Essen/Trinken",
+        types: ["FOOD", "BEVERAGES", "GROCERIES"],
+        // Account numbers or name patterns that should go in this category
+        patterns: ["Lebensmittel", "Getränke", "Essen", "Trinken", "Grillen", "Küche"],
     },
-    revenue: {
-        label: "Ertrag",
-        types: ["REVENUE", "INTEREST_INCOME", "OTHER_REVENUE"],
+    party: {
+        label: "Party/Events",
+        types: ["EVENTS", "PARTY"],
+        patterns: ["Party", "Aktivitas", "Feier", "Event", "Veranstaltung"],
     },
-    assets: {
-        label: "Vermögen",
-        types: ["ASSETS", "FINANCIAL", "FIXED_ASSETS", "INVENTORY", "RECEIVABLES", "CASH", "BANK"],
+    office: {
+        label: "Büro/Material",
+        types: ["OFFICE", "SUPPLIES"],
+        patterns: ["Büro", "Material", "Druck", "Papier", "Porto"],
     },
-    liabilities: {
-        label: "Verbindlichkeiten",
-        types: ["LIABILITIES", "EQUITIES", "PAYABLES", "LOANS"],
+    utilities: {
+        label: "Nebenkosten",
+        types: ["UTILITIES"],
+        patterns: ["Strom", "Gas", "Wasser", "Heizung", "Internet", "Telefon", "Versicherung"],
     },
-    persons: {
-        label: "Personen",
-        types: ["DEBTORS", "CREDITORS"],
+    maintenance: {
+        label: "Instandhaltung",
+        types: ["MAINTENANCE", "REPAIRS"],
+        patterns: ["Reparatur", "Wartung", "Renovierung", "Instandhaltung"],
+    },
+    income: {
+        label: "Einnahmen",
+        types: ["REVENUE", "INCOME", "INTEREST_INCOME"],
+        patterns: ["Beitrag", "Spende", "Miete", "Einnahme", "Zins"],
+    },
+    banking: {
+        label: "Bank/Kasse",
+        types: ["ASSETS", "CASH", "BANK", "FINANCIAL"],
+        patterns: ["Kasse", "Bank", "Giro", "Spar", "Konto"],
     },
     other: {
         label: "Sonstige",
-        types: [], // Catch-all for unmatched types
+        types: [], // Catch-all for unmatched
+        patterns: [],
     },
 } as const
 
@@ -62,12 +80,25 @@ interface AccountSelectorProps {
 }
 
 function categorizeAccount(account: Account): CategoryKey {
+    // First try to match by account type
     for (const [key, category] of Object.entries(ACCOUNT_CATEGORIES)) {
         if (key === "other") continue
         if (category.types.includes(account.type)) {
             return key as CategoryKey
         }
     }
+
+    // Then try to match by name patterns
+    const accountName = account.name.toLowerCase()
+    for (const [key, category] of Object.entries(ACCOUNT_CATEGORIES)) {
+        if (key === "other") continue
+        if (category.patterns && category.patterns.some((pattern: string) =>
+            accountName.includes(pattern.toLowerCase())
+        )) {
+            return key as CategoryKey
+        }
+    }
+
     return "other"
 }
 
@@ -84,7 +115,7 @@ export function AccountSelector({
     const [searchTerm, setSearchTerm] = useState("")
     const [sortField, setSortField] = useState<SortField>("number")
     const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
-    const [activeTab, setActiveTab] = useState<CategoryKey>("expenses")
+    const [activeTab, setActiveTab] = useState<CategoryKey>("food")
 
     // Filter out excluded types
     const filteredAccounts = useMemo(() => {
@@ -94,11 +125,13 @@ export function AccountSelector({
     // Group accounts by category
     const categorizedAccounts = useMemo(() => {
         const categories: Record<CategoryKey, Account[]> = {
-            expenses: [],
-            revenue: [],
-            assets: [],
-            liabilities: [],
-            persons: [],
+            food: [],
+            party: [],
+            office: [],
+            utilities: [],
+            maintenance: [],
+            income: [],
+            banking: [],
             other: [],
         }
 
@@ -148,11 +181,13 @@ export function AccountSelector({
     // Get counts for each category (for badges)
     const categoryCounts = useMemo(() => {
         const counts: Record<CategoryKey, number> = {
-            expenses: 0,
-            revenue: 0,
-            assets: 0,
-            liabilities: 0,
-            persons: 0,
+            food: 0,
+            party: 0,
+            office: 0,
+            utilities: 0,
+            maintenance: 0,
+            income: 0,
+            banking: 0,
             other: 0,
         }
         for (const [key, accounts] of Object.entries(categorizedAccounts)) {

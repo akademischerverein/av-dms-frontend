@@ -33,6 +33,7 @@ import { de } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { RequestInfo, SendRequest } from "@/lib/backend"
 import { AccountSelector } from "@/components/AccountSelector"
+import { PersonSelector } from "@/components/PersonSelector"
 
 interface UploadData {
   receiptDate: Date | undefined
@@ -65,6 +66,45 @@ export default function HomePage() {
 
   const [accounts, setAccounts] = useState([])
   const [isAccountsLoading, setAccountsLoading] = useState(true)
+
+  // Mock accounts for local testing when backend is unavailable
+  const mockAccounts = [
+    // Aufwand (Expenses)
+    { number: 4100, name: "Aktivitas-Party (Aufwand)", type: "EXPENSES", label: "Aktivitas-Party (Aufwand)", value: 4100 },
+    { number: 4110, name: "Grillen (Aufwand)", type: "EXPENSES", label: "Grillen (Aufwand)", value: 4110 },
+    { number: 4120, name: "Getränke (Aufwand)", type: "EXPENSES", label: "Getränke (Aufwand)", value: 4120 },
+    { number: 4130, name: "Lebensmittel (Aufwand)", type: "EXPENSES", label: "Lebensmittel (Aufwand)", value: 4130 },
+    { number: 4200, name: "Büromaterial (Aufwand)", type: "EXPENSES", label: "Büromaterial (Aufwand)", value: 4200 },
+    { number: 4210, name: "Reparaturen (Aufwand)", type: "EXPENSES", label: "Reparaturen (Aufwand)", value: 4210 },
+    { number: 4300, name: "Versicherungen (Aufwand)", type: "EXPENSES", label: "Versicherungen (Aufwand)", value: 4300 },
+    { number: 4400, name: "Strom/Gas (Aufwand)", type: "EXPENSES", label: "Strom/Gas (Aufwand)", value: 4400 },
+    { number: 4410, name: "Wasser (Aufwand)", type: "EXPENSES", label: "Wasser (Aufwand)", value: 4410 },
+    { number: 4500, name: "Telefon/Internet (Aufwand)", type: "EXPENSES", label: "Telefon/Internet (Aufwand)", value: 4500 },
+    // Ertrag (Revenue)
+    { number: 8100, name: "Mitgliedsbeiträge (Ertrag)", type: "REVENUE", label: "Mitgliedsbeiträge (Ertrag)", value: 8100 },
+    { number: 8110, name: "Semesterbeiträge (Ertrag)", type: "REVENUE", label: "Semesterbeiträge (Ertrag)", value: 8110 },
+    { number: 8200, name: "Spenden (Ertrag)", type: "REVENUE", label: "Spenden (Ertrag)", value: 8200 },
+    { number: 8300, name: "Mieteinnahmen (Ertrag)", type: "REVENUE", label: "Mieteinnahmen (Ertrag)", value: 8300 },
+    { number: 8400, name: "Zinserträge (Ertrag)", type: "REVENUE", label: "Zinserträge (Ertrag)", value: 8400 },
+    // Vermögen (Assets)
+    { number: 1000, name: "Kasse (Vermögen)", type: "ASSETS", label: "Kasse (Vermögen)", value: 1000 },
+    { number: 1100, name: "Girokonto (Vermögen)", type: "ASSETS", label: "Girokonto (Vermögen)", value: 1100 },
+    { number: 1200, name: "Sparkonto (Vermögen)", type: "ASSETS", label: "Sparkonto (Vermögen)", value: 1200 },
+    { number: 1300, name: "Inventar (Vermögen)", type: "ASSETS", label: "Inventar (Vermögen)", value: 1300 },
+    // Verbindlichkeiten (Liabilities)
+    { number: 3100, name: "Verbindlichkeiten Bank (Verbindlichkeiten)", type: "LIABILITIES", label: "Verbindlichkeiten Bank (Verbindlichkeiten)", value: 3100 },
+    { number: 3200, name: "Verbindlichkeiten Lieferanten (Verbindlichkeiten)", type: "LIABILITIES", label: "Verbindlichkeiten Lieferanten (Verbindlichkeiten)", value: 3200 },
+    // Personen (Debtors/Creditors)
+    { number: 9001, name: "Max Mustermann", type: "DEBTORS", label: "Max Mustermann", value: 9001 },
+    { number: 9002, name: "Maria Schmidt", type: "DEBTORS", label: "Maria Schmidt", value: 9002 },
+    { number: 9003, name: "Hans Weber", type: "CREDITORS", label: "Hans Weber", value: 9003 },
+    { number: 9004, name: "Anna Müller", type: "CREDITORS", label: "Anna Müller", value: 9004 },
+    { number: 9005, name: "Peter Fischer", type: "DEBTORS", label: "Peter Fischer", value: 9005 },
+    // Sonstige
+    { number: 6000, name: "Sonstiges (Sonstige)", type: "OTHER", label: "Sonstiges (Sonstige)", value: 6000 },
+    { number: 6100, name: "Durchlaufende Posten (Sonstige)", type: "OTHER", label: "Durchlaufende Posten (Sonstige)", value: 6100 },
+  ]
+
   useEffect(() => {
     if (accounts.length > 0) return
 
@@ -75,6 +115,11 @@ export default function HomePage() {
           ele.value = ele.number
         })
         setAccounts(data)
+        setAccountsLoading(false)
+      })
+      .catch((err) => {
+        console.log("Backend unavailable, using mock accounts for testing", err)
+        setAccounts(mockAccounts)
         setAccountsLoading(false)
       })
   })
@@ -656,21 +701,12 @@ export default function HomePage() {
                     <User className="h-4 w-4" />
                     {formData.debitCredit == "credit" ? "Wer hat Geld bekommen?" : "Wer hat gezahlt?"}
                   </Label>
-                  <Select
+                  <PersonSelector
+                    accounts={accounts}
                     value={formData.person}
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, person: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Person auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {personAccounts.map((type) => (
-                        <SelectItem key={type.number} value={String(type.number)}>
-                          {type.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Person auswählen"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2">

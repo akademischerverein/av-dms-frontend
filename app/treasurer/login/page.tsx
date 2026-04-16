@@ -21,16 +21,25 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   
   useEffect(() => {
-	fetch("https://belege.av-da.de/api/auth/whoami", {"credentials": "include"}).then((res) => res.json()).then((data) => {
-		if (data.isAuthenticated) {
-			toast({
-				title: "Bereits angemeldet",
-				description: "Sie werden zum Dashboard weitergeleitet.",
-			})
-			// already authenticated
-			router.replace("/treasurer")
-		}
-	})
+    fetch("https://belege.av-da.de/api/auth/whoami", { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Authentication check failed")
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (data.isAuthenticated) {
+          toast({
+            title: "Bereits angemeldet",
+            description: "Sie werden zum Dashboard weitergeleitet.",
+          })
+          router.replace("/treasurer")
+        }
+      })
+      .catch((error) => {
+        console.warn("Authentication check unavailable", error)
+      })
   }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,51 +49,68 @@ export default function LoginPage() {
 
     // Simulate a small delay for better UX
     await new Promise((resolve) => setTimeout(resolve, 300))
-	let resp = await fetch("https://belege.av-da.de/api/auth/login", {"method": "POST", "body": JSON.stringify({"username": username, "password": password}), "headers": {"Content-Type": "application/json"}, "credentials": "include"})
-	
-	if (resp.status >= 500) {
-		setError("Server-Fehler. Bitte versuchen Sie es später erneut.")
-		setIsLoading(false)
-	}
-	let data = await resp.json()
-	
-	if (resp.status >= 400) {
-		if (data.code === "RATE_LIMITED") {
-			setError("Zu viele Loginversuche. Bitte versuchen Sie es später erneut.")
-			setPassword("")
-			setIsLoading(false)
-			return
-		} else if (data.code === "INVALID_LOGIN") {
-			setError("Die Logindaten sind falsch. Bitte versuchen Sie es erneut.")
-			setPassword("")
-			setIsLoading(false)
-			return
-		} else if (data.code === "ALREADY_AUTHENTICATED") {
-			toast({
-				title: "Bereits angemeldet",
-				description: "Sie werden zum Dashboard weitergeleitet.",
-			})
-			router.replace("/treasurer")
-		}
-	} else if (resp.status === 200) {
-		toast({
-			title: "Erfolgreich",
-			description: "Hallo " + data.displayName + "! Sie werden zum Dashboard weitergeleitet.",
-		})
-		router.replace("/treasurer")
-		return
-	}
-	
-	setError("Unbekannter Fehler. Bitte versuchen Sie es erneut.")
-	setPassword("")
-	setIsLoading(false)
+
+    try {
+      const resp = await fetch("https://belege.av-da.de/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      })
+
+      if (resp.status >= 500) {
+        setError("Server-Fehler. Bitte versuchen Sie es später erneut.")
+        return
+      }
+
+      const data = await resp.json()
+
+      if (resp.status >= 400) {
+        if (data.code === "RATE_LIMITED") {
+          setError("Zu viele Loginversuche. Bitte versuchen Sie es später erneut.")
+          setPassword("")
+          return
+        }
+
+        if (data.code === "INVALID_LOGIN") {
+          setError("Die Logindaten sind falsch. Bitte versuchen Sie es erneut.")
+          setPassword("")
+          return
+        }
+
+        if (data.code === "ALREADY_AUTHENTICATED") {
+          toast({
+            title: "Bereits angemeldet",
+            description: "Sie werden zum Dashboard weitergeleitet.",
+          })
+          router.replace("/treasurer")
+          return
+        }
+      } else if (resp.status === 200) {
+        toast({
+          title: "Erfolgreich",
+          description: "Hallo " + data.displayName + "! Sie werden zum Dashboard weitergeleitet.",
+        })
+        router.replace("/treasurer")
+        return
+      }
+
+      setError("Unbekannter Fehler. Bitte versuchen Sie es erneut.")
+      setPassword("")
+    } catch (error) {
+      console.error("Login request failed", error)
+      setError("Backend nicht erreichbar. Bitte prüfen Sie die API-Verbindung.")
+      setPassword("")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-[#e53b3e]/40 p-4 flex items-center justify-center">
       <div className="max-w-md w-full">
         <div className="flex justify-center mb-8">
-          <Image src="/AV_Logo.jpg" alt="Logo" width={120} height={120} className="rounded-md shadow-md" />
+          <Image src="/AV_Logo.jpg" alt="Logo" width={120} height={120} priority className="rounded-md shadow-md" />
         </div>
 
         <Card>
@@ -102,6 +128,7 @@ export default function LoginPage() {
                 <Input
                   id="username"
                   type="text"
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Benutzername eingeben"
@@ -115,6 +142,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Passwort eingeben"
@@ -148,4 +176,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

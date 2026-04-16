@@ -9,27 +9,17 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import {
   FileText,
   CheckCircle,
   XCircle,
-  AlertTriangle,
   Eye,
   Download,
   Filter,
   Search,
-  User,
-  MessageSquare,
   Clock,
   TrendingUp,
   LogOut,
@@ -40,31 +30,8 @@ import {
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
 import Image from "next/image"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
 import { RequestInfo, SendRequest, PutRequest, Document, Group, BuildApiUrl } from "@/lib/backend"
 import { AccountSelector } from "@/components/AccountSelector"
-
-interface Receipt {
-  id: number
-  uploaderName: string
-  uploaderEmail: string
-  receiptDate: string
-  amount: number
-  purpose: string
-  accountType: string
-  debitCredit: "debit" | "credit"
-  comment: string
-  status: "uploaded" | "approved" | "rejected" | "finalized"
-  uploadedAt: string
-  filename: string
-  treasurerComment?: string
-  receiptGroup?: string
-  markings: ("green" | "yellow" | "red")[]
-  previewUrl?: string
-  mimeType?: string
-  base64?: string
-}
 
 interface DocumentMarking {
   markings: ("green" | "yellow" | "red")[]
@@ -74,14 +41,10 @@ export default function TreasurerPage() {
   const { toast } = useToast()
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null) // null = checking, true = authenticated, false = not authenticated
-  const [isBelegkreiseLoading, setBelegkreiseLoading] = useState(true)
-  const [belegkreise, setBelegkreise] = useState([])
-  const [comment, setComment] = useState<string>(null)
   const [documents, setDocuments] = useState<Record<number, Document>>(new Map())
   const [markings, setMarkings] = useState<Record<number, DocumentMarking>>({})
   const [selectedReceipt, setSelectedReceipt] = useState<Document | null>(null)
   const [selectedDocumentAllVersions, setSelectedDocumentAllVersions] = useState<Document | null>(null)
-  const [editingReceipt, setEditingReceipt] = useState<Document | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -89,7 +52,6 @@ export default function TreasurerPage() {
 
   // Groups (Belegkreise) state
   const [groups, setGroups] = useState<Group[]>([])
-  const [isGroupsDialogOpen, setIsGroupsDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
 
   // Accounts state
@@ -388,17 +350,19 @@ export default function TreasurerPage() {
     })
   }
 
-  const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red", comment: string) => {
-    if (!(documentId in markings)) {
-      markings[documentId] = { "comment": null, "markings": [] }
-    }
-
-    const newMarkings = markings[documentId].markings.includes(marking)
-      ? markings[documentId].markings.filter((m) => m !== marking)
-      : [...markings[documentId].markings, marking]
-    markings[documentId].markings = newMarkings
-    markings[documentId].comment = comment
-    localStorage.setItem("documentMarkings", JSON.stringify(markings))
+  const handleMarkingToggle = (documentId: number, marking: "green" | "yellow" | "red") => {
+    setMarkings((prev) => {
+      const current = prev[documentId]?.markings || []
+      const nextMarkings = current.includes(marking)
+        ? current.filter((value) => value !== marking)
+        : [...current, marking]
+      const next = {
+        ...prev,
+        [documentId]: { markings: nextMarkings },
+      }
+      localStorage.setItem("documentMarkings", JSON.stringify(next))
+      return next
+    })
   }
 
   const stats = {
