@@ -559,6 +559,7 @@ export default function TreasurerPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {/*
                           {receipt.version.state === "UPLOADED" && (
                             <>
                               <Button
@@ -578,7 +579,7 @@ export default function TreasurerPage() {
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
-                          )}
+                          )} */}
                         </div>
                       </TableCell>
                     </TableRow>
