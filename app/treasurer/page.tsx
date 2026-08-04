@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog,DialogTitle, DialogContent } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -660,6 +660,7 @@ export default function TreasurerPage() {
                                 }
                               }}
                             >
+
                               <SelectTrigger>
                                 <SelectValue placeholder="Auswählen" />
                               </SelectTrigger>
@@ -670,16 +671,13 @@ export default function TreasurerPage() {
                                   </SelectItem>
                                 ))}
                               </SelectContent>
+
                             </Select>
                           </div>
+     
                           <div>
                             <Label className="block mb-1">Beleg-Nr.</Label>
-                            <Input
-                              type="number"
-                              value={editedNumber || ""}
-                              onChange={(e) => setEditedNumber(parseInt(e.target.value) || null)}
-                              placeholder="Nr."
-                            />
+                            <p>{editedNumber}</p>
                           </div>
                         </div>
 
@@ -754,7 +752,7 @@ export default function TreasurerPage() {
                         </>
                       )}
                     </div>
-                  </div>
+                  </div> 
                 </>
               )}
             </div>
