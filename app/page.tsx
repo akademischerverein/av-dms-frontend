@@ -114,7 +114,8 @@ export default function HomePage() {
           ele.label = ele.name
           ele.value = ele.number
         })
-        setAccounts(data)
+        const publicAccounts= data.filter((acc) =>  acc.public === true);
+        setAccounts(publicAccounts)
         setAccountsLoading(false)
       })
       .catch((err) => {
