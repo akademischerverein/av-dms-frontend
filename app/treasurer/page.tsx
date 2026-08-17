@@ -722,15 +722,6 @@ export default function TreasurerPage() {
                         )}
                       </div>
 
-                      {/* Markierungen */}
-                      <div className="space-y-2">
-                        <p className="font-medium">Markierungen</p>
-                        <div className="flex gap-2 flex-wrap">
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("green") ? "bg-green-600 text-white" : "bg-transparent border border-green-600 text-green-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "green")}>Korrekt</Button>
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("yellow") ? "bg-yellow-500 text-white" : "bg-transparent border border-yellow-500 text-yellow-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "yellow")}>Unklar</Button>
-                          <Button size="sm" className={((markings[selectedReceipt.documentId] || {}).markings || []).includes("red") ? "bg-red-600 text-white" : "bg-transparent border border-red-600 text-red-600"} onClick={() => handleMarkingToggle(selectedReceipt.documentId, "red")}>Fehler</Button>
-                        </div>
-                      </div>
                     </div>
 
                     {/* Buttons */}
