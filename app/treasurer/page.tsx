@@ -615,7 +615,6 @@ export default function TreasurerPage() {
                       <div className="space-y-1">
                         <p><span className="font-medium">E-Mail:</span> {selectedReceipt.uploaderEmail}</p>
                         <p><span className="font-medium">Datei:</span> {selectedReceipt.file.filename}</p>
-                        {selectedDocumentAllVersions?.versions?.[0]?.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedDocumentAllVersions.versions[0].comment}</p>}
                       </div>
 
                       {/* Editable Details */}
@@ -701,6 +700,11 @@ export default function TreasurerPage() {
                           />
                         </div>
 
+                        <div>
+                          <p className="font-medium mb-2">Notiz Einreicher:in</p>
+                          {selectedDocumentAllVersions?.versions?.[0]?.comment && <p className="bg-gray-50 p-2 rounded text-xs">{selectedDocumentAllVersions.versions[0].comment}</p>}
+                        </div>
+
                         {/* Comment for new version */}
                         <div>
                           <Label className="block mb-1">Interne Notiz (für diese Änderung)</Label>
@@ -711,15 +715,16 @@ export default function TreasurerPage() {
                           />
                         </div>
 
+
                         {/* Previous notes */}
-                        {selectedDocumentAllVersions?.versions && selectedDocumentAllVersions.versions.length > 1 && (
-                          <div>
+                        {/*{selectedDocumentAllVersions?.versions && selectedDocumentAllVersions.versions.length > 1 && (
+                        <div>
                             <p className="font-medium mb-2">Frühere Notizen</p>
                             {selectedDocumentAllVersions.versions.slice(1).map((version, idx) => version.comment && (
                               <p key={idx} className="bg-gray-50 p-2 rounded text-xs mb-1">{version.comment}</p>
                             ))}
                           </div>
-                        )}
+                        )}*/}
                       </div>
 
                     </div>
